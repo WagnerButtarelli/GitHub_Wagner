@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Leitor de Código + Áudio</title>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { margin: 0; padding: 16px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #1a73e8; }
+        button { 
+            background: #1a73e8; color: white; border: none; padding: 12px 24px; 
+            border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; 
+            transition: background 0.2s;
+        }
+        button:active { background: #0d47a1; }
+        button.secondary { background: #34a853; }
+        button.secondary:active { background: #1e7e34; }
+        button:disabled { opacity: 0.6; pointer-events: none; }
+        #camera-container { 
+            position: relative; width: 100%; aspect-ratio: 4/3; 
+            background: #000; border-radius: 8px; overflow: hidden; margin: 12px 0;
+        }
+        #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            pointer-events: none;
+        }
+        #scan-line {
+            width: 80%; height: 4px; background: rgba(255, 0, 0, 0.7);
+            box-shadow: 0 0 20px red; animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { transform: translateY(-40%); }
+            100% { transform: translateY(40%); }
+        }
+        .result-box { 
+            background: #e8f0fe; padding: 12px; border-radius: 8px; 
+            margin: 12px 0; min-height: 50px;
+        }
+        .result-box .label { font-weight: bold; color: #1a73e8; }
+        .status { font-size: 14px; color: #555; margin-top: 8px; }
+        .flex-row { display: flex; gap: 10px; }
+        .flex-row button { flex: 1; }
+        #audio-text { font-size: 18px; font-weight: 500; color: #202124; }
+        .small-note { font-size: 12px; color: #888; margin-top: 8px; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Card: Leitor de código de barras -->
+    <div class="card">
+        <h2>📷 Leitor de Código</h2>
+        <div id="camera-container">
+            <video id="video" autoplay playsinline></video>
+            <div id="overlay"><div id="scan-line"></div></div>
+        </div>
+        <button id="btn-start-camera">📸 Iniciar Câmera</button>
+        <div class="result-box" id="barcode-result">
+            <span class="label">Produto:</span> <span id="product-name">Aguardando leitura...</span><br>
+            <span class="label">Marca:</span> <span id="product-brand">-</span>
+        </div>
+        <div class="status" id="barcode-status">Clique em "Iniciar Câmera" e aponte para o código.</div>
+    </div>
+
+    <!-- Card: Captador de áudio -->
+    <div class="card">
+        <h2>🎤 Reconhecimento de Voz</h2>
+        <button id="btn-start-audio" class="secondary">🎙️ Ouvir e transcrever</button>
+        <div class="result-box" id="audio-result">
+            <span class="label">Texto falado:</span><br>
+            <span id="audio-text">Clique no botão e fale...</span>
+        </div>
+        <div class="status" id="audio-status">Aguardando comando.</div>
+    </div>
+
+    <!-- (Opcional) envio para o GAS -->
+    <div class="card" style="background: #fce8e6;">
+        <h2 style="color:#d93025;">📤 Enviar para o GAS</h2>
+        <button id="btn-send-last">Enviar último produto lido para a planilha</button>
+        <div class="status" id="gas-status">Nenhum dado enviado.</div>
+        <div class="small-note">Requer URL do Web App do GAS configurada.</div>
+    </div>
+
+</div>
+
+<script>
+    (function() {
+        "use strict";
+
+        // ---------- ELEMENTOS ----------
+        const video = document.getElementById('video');
+        const btnCamera = document.getElementById('btn-start-camera');
+        const productName = document.getElementById('product-name');
+        const productBrand = document.getElementById('product-brand');
+        const barcodeStatus = document.getElementById('barcode-status');
+
+        const btnAudio = document.getElementById('btn-start-audio');
+        const audioText = document.getElementById('audio-text');
+        const audioStatus = document.getElementById('audio-status');
+
+        const btnSend = document.getElementById('btn-send-last');
+        const gasStatus = document.getElementById('gas-status');
+
+        // ---------- VARIÁVEIS GLOBAIS ----------
+        let stream = null;
+        let barcodeDetector = null;
+        let scanInterval = null;
+        let lastProductData = null; // guarda o último produto lido
+
+        // ---------- CONFIGURAÇÃO DO BACKEND GAS (opcional) ----------
+        // Substitua pela URL do seu Web App do GAS
+        const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/SEU_ID/exec';
+
+        // ---------- 1. LEITOR DE CÓDIGO DE BARRAS ----------
+        async function startCamera() {
+            try {
+                // Solicita a câmera traseira (environment)
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 640 } }
+                });
+                video.srcObject = stream;
+                await video.play();
+
+                // Verifica suporte ao BarcodeDetector
+                if (!('BarcodeDetector' in window)) {
+                    barcodeStatus.textContent = '❌ Seu navegador não suporta BarcodeDetector. Use Chrome/Edge no Android.';
+                    return;
+                }
+
+                barcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar'] });
+
+                btnCamera.textContent = '⏹️ Parar Câmera';
+                barcodeStatus.textContent = '📸 Câmera ativa. Aguardando código...';
+
+                // Inicia o loop de leitura a cada 500ms
+                if (scanInterval) clearInterval(scanInterval);
+                scanInterval = setInterval(scanBarcode, 500);
+            } catch (err) {
+                console.error(err);
+                barcodeStatus.textContent = '❌ Erro ao acessar a câmera: ' + err.message;
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+            btnCamera.textContent = '📸 Iniciar Câmera';
+            barcodeStatus.textContent = 'Câmera parada. Clique em "Iniciar Câmera" para recomeçar.';
+        }
+
+        async function scanBarcode() {
+            if (!barcodeDetector || !video.videoWidth) return;
+            try {
+                const barcodes = await barcodeDetector.detect(video);
+                if (barcodes.length > 0) {
+                    // Pega o primeiro código detectado
+                    const code = barcodes[0].rawValue;
+                    barcodeStatus.textContent = '✅ Código lido: ' + code + ' – Buscando produto...';
+                    await lookupProduct(code);
+                }
+            } catch (err) {
+                // Silencia erros de detecção (comum quando não há código)
+            }
+        }
+
+        async function lookupProduct(code) {
+            try {
+                const url = `https://br.openfoodfacts.org/api/v0/produto/${code}.json`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Erro ao consultar API');
+                const data = await response.json();
+
+                if (data.status === 1) {
+                    const product = data.product;
+                    const name = product.product_name || 'Nome não disponível';
+                    const brand = product.brands || 'Marca não disponível';
+                    productName.textContent = name;
+                    productBrand.textContent = brand;
+                    barcodeStatus.textContent = '✅ Produto encontrado!';
+                    // Guarda para envio posterior
+                    lastProductData = { code, name, brand, timestamp: new Date().toISOString() };
+                } else {
+                    productName.textContent = '❌ Produto não encontrado';
+                    productBrand.textContent = '-';
+                    barcodeStatus.textContent = '⚠️ Código não cadastrado no Open Food Facts.';
+                    lastProductData = null;
+                }
+            } catch (err) {
+                console.error(err);
+                productName.textContent = '❌ Erro na consulta';
+                productBrand.textContent = '-';
+                barcodeStatus.textContent = '❌ Falha ao buscar produto: ' + err.message;
+                lastProductData = null;
+            }
+        }
+
+        // Evento do botão da câmera
+        btnCamera.addEventListener('click', function() {
+            if (stream && stream.active) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        });
+
+        // ---------- 2. RECONHECIMENTO DE VOZ ----------
+        let recognition = null;
+
+        function initSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                audioStatus.textContent = '❌ Seu navegador não suporta reconhecimento de voz.';
+                return false;
+            }
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'pt-BR';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = function() {
+                audioStatus.textContent = '🎤 Ouvindo... Fale agora.';
+                btnAudio.textContent = '⏹️ Parar (ouvindo...)';
+                btnAudio.disabled = false;
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                audioText.textContent = transcript;
+                audioStatus.textContent = '✅ Transcrição concluída.';
+                btnAudio.textContent = '🎙️ Ouvir e transcrever';
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Erro no reconhecimento:', event.error);
+                if (event.error === 'not-allowed') {
+                    audioStatus.textContent = '❌ Permissão de microfone negada.';
+                } else {
+                    audioStatus.textContent = '⚠️ Erro: ' + event.error;
+                }
+                btnAudio.textContent = '🎙️ Ouvir e transcrever';
+                btnAudio.disabled = false;
+            };
+
+            recognition.onend = function() {
+                audioStatus.textContent = '🔄 Reconhecimento finalizado.';
+                btnAudio.textContent = '🎙️ Ouvir e transcrever';
+                btnAudio.disabled = false;
+            };
+
+            return true;
+        }
+
+        function toggleAudio() {
+            if (!recognition) {
+                const ok = initSpeechRecognition();
+                if (!ok) return;
+            }
+            // Se já estiver ouvindo, para
+            try {
+                if (recognition && recognition.recognizing) {
+                    recognition.stop();
+                    return;
+                }
+            } catch (e) {}
+
+            // Inicia
+            try {
+                recognition.start();
+                btnAudio.disabled = true; // será reabilitado no onend/onerror
+            } catch (err) {
+                console.error(err);
+                audioStatus.textContent = '❌ Erro ao iniciar: ' + err.message;
+                btnAudio.disabled = false;
+            }
+        }
+
+        btnAudio.addEventListener('click', toggleAudio);
+
+        // Inicializa o reconhecimento para verificar suporte (mas não inicia)
+        initSpeechRecognition();
+
+        // ---------- 3. ENVIO PARA O GAS (OPCIONAL) ----------
+        btnSend.addEventListener('click', async function() {
+            if (!lastProductData) {
+                gasStatus.textContent = '⚠️ Nenhum produto lido ainda.';
+                return;
+            }
+            if (GAS_WEB_APP_URL === 'https://script.google.com/macros/s/SEU_ID/exec') {
+                gasStatus.textContent = '⚠️ Configure a URL do GAS no código.';
+                return;
+            }
+            try {
+                btnSend.disabled = true;
+                gasStatus.textContent = '⏳ Enviando...';
+                const response = await fetch(GAS_WEB_APP_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // se o GAS não retornar CORS, usamos no-cors
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(lastProductData)
+                });
+                // Com no-cors, não podemos ler a resposta, mas a requisição é enviada.
+                gasStatus.textContent = '✅ Dados enviados com sucesso (verifique a planilha).';
+                btnSend.disabled = false;
+            } catch (err) {
+                console.error(err);
+                gasStatus.textContent = '❌ Erro ao enviar: ' + err.message;
+                btnSend.disabled = false;
+            }
+        });
+
+        // Limpeza ao fechar a página
+        window.addEventListener('beforeunload', function() {
+            stopCamera();
+            if (recognition && recognition.recognizing) recognition.stop();
+        });
+
+    })();
+</script>
+</body>
+</html>
