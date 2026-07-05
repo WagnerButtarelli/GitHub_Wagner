@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reconhecimento de Voz - Compras</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    font-family: 'Roboto', system-ui, sans-serif;
+    background: linear-gradient(135deg,#52AFFD 0%,#2196F3 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: white;
+    border-radius: 24px;
+    padding: 32px 24px;
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  }
+  h1 { font-size: 18px; color:#2c3e50; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color:#7f8c8d; margin-bottom: 24px; }
+  .mic-btn {
+    width: 96px; height: 96px; border-radius: 50%; border: none;
+    background: linear-gradient(135deg,#FF6B6B,#e85555);
+    color: white; font-size: 36px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px; transition: all 0.2s;
+    box-shadow: 0 8px 24px rgba(255,107,107,0.4);
+  }
+  .mic-btn:active { transform: scale(0.95); }
+  .mic-btn.ouvindo { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255,107,107,0.55); }
+    70% { box-shadow: 0 0 0 22px rgba(255,107,107,0); }
+    100% { box-shadow: 0 0 0 0 rgba(255,107,107,0); }
+  }
+  .status { font-size: 14px; color:#2c3e50; font-weight: 600; margin-bottom: 12px; min-height: 20px; }
+  .transcript {
+    background: #f0f4f8; border-radius: 14px; padding: 14px;
+    font-size: 14px; color: #2c3e50; min-height: 48px;
+    margin-bottom: 20px; text-align: left; word-break: break-word;
+  }
+  .transcript.vazio { color: #a0a8b0; font-style: italic; text-align: center; }
+  .actions { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; padding: 13px; border: none; border-radius: 12px;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-outline { background: #f0f4f8; color: #2c3e50; }
+  .btn-primary { background: linear-gradient(135deg,#52AFFD,#3d9aed); color: white; }
+  .btn:disabled { opacity: 0.5; pointer-events: none; }
+  .btn:active { transform: scale(0.97); }
+  .erro { color: #f44336; font-size: 13px; margin-bottom: 12px; display:none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🎤 Diga o item da compra</h1>
+    <div class="subtitle">Ex: "Arroz quantidade 2 valor total 15 reais"</div>
+
+    <button id="btnMic" class="mic-btn"><i>🎙️</i></button>
+
+    <div class="status" id="status">Toque no microfone para começar</div>
+    <div class="erro" id="erro"></div>
+    <div class="transcript vazio" id="transcript">Nenhum texto reconhecido ainda</div>
+
+    <div class="actions">
+      <button class="btn btn-outline" onclick="window.close()">Cancelar</button>
+      <button class="btn btn-primary" id="btnEnviar" onclick="enviarTexto()" disabled>Enviar</button>
+    </div>
+  </div>
+
+<script>
+  var statusEl = document.getElementById('status');
+  var transcriptEl = document.getElementById('transcript');
+  var erroEl = document.getElementById('erro');
+  var micBtn = document.getElementById('btnMic');
+  var btnEnviar = document.getElementById('btnEnviar');
+  var textoFinal = '';
+  var reconhecimento = null;
+  var SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognitionAPI) {
+    statusEl.textContent = '';
+    erroEl.style.display = 'block';
+    erroEl.textContent = 'Este navegador não suporta reconhecimento de voz. Tente no Chrome.';
+    micBtn.disabled = true;
+  } else {
+    reconhecimento = new SpeechRecognitionAPI();
+    reconhecimento.lang = 'pt-BR';
+    reconhecimento.continuous = false;
+    reconhecimento.interimResults = true;
+    reconhecimento.maxAlternatives = 1;
+
+    reconhecimento.onstart = function() {
+      micBtn.classList.add('ouvindo');
+      statusEl.textContent = 'Ouvindo...';
+      erroEl.style.display = 'none';
+    };
+
+    reconhecimento.onresult = function(event) {
+      var texto = '';
+      for (var i = 0; i < event.results.length; i++) {
+        texto += event.results[i][0].transcript;
+      }
+      transcriptEl.textContent = texto;
+      transcriptEl.classList.remove('vazio');
+      if (event.results[event.results.length - 1].isFinal) {
+        textoFinal = texto.trim();
+        btnEnviar.disabled = !textoFinal;
+      }
+    };
+
+    reconhecimento.onerror = function(event) {
+      micBtn.classList.remove('ouvindo');
+      statusEl.textContent = 'Toque no microfone para começar';
+      erroEl.style.display = 'block';
+      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+        erroEl.textContent = 'Permissão de microfone negada. Permita o acesso e tente novamente.';
+      } else if (event.error === 'no-speech') {
+        erroEl.textContent = 'Nenhuma fala detectada. Tente novamente.';
+      } else {
+        erroEl.textContent = 'Erro no reconhecimento: ' + event.error;
+      }
+    };
+
+    reconhecimento.onend = function() {
+      micBtn.classList.remove('ouvindo');
+      if (textoFinal) {
+        statusEl.textContent = 'Pronto! Confira e envie.';
+      } else {
+        statusEl.textContent = 'Toque no microfone para começar';
+      }
+    };
+
+    micBtn.addEventListener('click', function() {
+      textoFinal = '';
+      btnEnviar.disabled = true;
+      transcriptEl.textContent = 'Nenhum texto reconhecido ainda';
+      transcriptEl.classList.add('vazio');
+      try {
+        reconhecimento.start();
+      } catch (e) {
+        // já em execução; ignora
+      }
+    });
+  }
+
+  function enviarTexto() {
+    if (!textoFinal || !window.opener) return;
+    window.opener.postMessage({ tipo: 'transcricao_compras', texto: textoFinal }, '*');
+    window.close();
+  }
+</script>
+</body>
+</html>
