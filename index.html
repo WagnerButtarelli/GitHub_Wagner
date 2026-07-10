@@ -1,443 +1,1189 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Leitor + Áudio</title>
-    <style>
-        * { box-sizing: border-box; font-family: system-ui, sans-serif; }
-        body { margin: 0; padding: 16px; background: #f0f2f5; }
-        .container { max-width: 600px; margin: 0 auto; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestão de Tarefas Inteligentes</title>
 
-        /* Botões de navegação entre modos */
-        .nav-buttons { display: flex; gap: 10px; margin-bottom: 20px; }
-        .nav-buttons button {
-            flex: 1; padding: 14px; border: none; border-radius: 10px;
-            font-size: 16px; font-weight: 600; cursor: pointer;
-            background: #e0e0e0; color: #333; transition: 0.2s;
-        }
-        .nav-buttons button.active { background: #1a73e8; color: white; box-shadow: 0 2px 8px rgba(26,115,232,0.3); }
-        .nav-buttons button:active { transform: scale(0.96); }
+  <!-- Google Sans / Product Sans -->
+  <link href="https://fonts.cdnfonts.com/css/product-sans" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 
-        .card {
-            background: white; border-radius: 16px; padding: 20px;
-            margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-            display: none; /* oculto por padrão */
-        }
-        .card.active { display: block; }
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-        h2 { margin-top: 0; color: #1a73e8; font-size: 20px; }
+  <!-- React & Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-        /* Leitor de código */
-        #camera-container {
-            position: relative; width: 100%; aspect-ratio: 4/3;
-            background: #000; border-radius: 12px; overflow: hidden; margin: 12px 0;
-        }
-        #video { width: 100%; height: 100%; object-fit: cover; display: block; }
-        #scan-line {
-            position: absolute; top: 0; left: 10%; width: 80%; height: 4px;
-            background: rgba(255, 50, 50, 0.8); box-shadow: 0 0 20px red;
-            animation: scan 2s linear infinite;
-        }
-        @keyframes scan {
-            0% { transform: translateY(-40%); }
-            100% { transform: translateY(40%); }
-        }
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
 
-        .btn-primary {
-            background: #1a73e8; color: white; border: none; padding: 14px;
-            border-radius: 10px; font-size: 16px; font-weight: 600; width: 100%;
-            cursor: pointer; transition: 0.2s;
-        }
-        .btn-primary:active { background: #0d47a1; transform: scale(0.97); }
-        .btn-primary:disabled { opacity: 0.6; pointer-events: none; }
+  <!-- Bibliotecas para exportação PDF e Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-        .btn-audio {
-            background: #1a73e8; /* AZUL */
-            color: white; border: none; padding: 14px;
-            border-radius: 10px; font-size: 16px; font-weight: 600; width: 100%;
-            cursor: pointer; transition: 0.2s;
-        }
-        .btn-audio:active { background: #0d47a1; transform: scale(0.97); }
-        .btn-audio:disabled { opacity: 0.6; pointer-events: none; }
+  <style>
+    body {
+      font-family: 'Product Sans', 'Inter', sans-serif;
+      transition: background-color 0.2s, color 0.2s;
+      font-size: 18px;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    @media (max-width: 768px) {
+      .text-\[9px\], .text-\[10px\], .text-\[11px\], .text-xs { font-size: 15px !important; line-height: 1.4rem !important; }
+      .text-sm { font-size: 17px !important; line-height: 1.5rem !important; }
+      .text-base, .text-md { font-size: 19px !important; line-height: 1.6rem !important; }
+      .text-lg { font-size: 21px !important; }
+      input, select, textarea { font-size: 18px !important; padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+      label { font-size: 15px !important; font-weight: 700 !important; }
+      button { font-size: 16px !important; padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+    ::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.4); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.7); }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .glass-card {
+      background: rgba(30,41,59,0.5);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .light .glass-card {
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+  </style>
 
-        .result-box {
-            background: #f8f9fa; padding: 14px; border-radius: 10px;
-            margin: 12px 0; min-height: 50px; border-left: 4px solid #1a73e8;
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: { brand: { dark:'#0f172a', surface:'#1e293b', lightBg:'#f8fafc', lightSurface:'#ffffff' } },
+          fontFamily: { sans: ['"Product Sans"','sans-serif'], mono: ['"JetBrains Mono"','monospace'] }
         }
-        .result-box .label { font-weight: 600; color: #1a73e8; }
-        .status { font-size: 14px; color: #555; margin-top: 6px; }
-
-        .config-area {
-            background: #f1f3f4; padding: 14px; border-radius: 10px;
-            margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;
-            align-items: center;
-        }
-        .config-area input {
-            flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px;
-            font-size: 14px; min-width: 200px;
-        }
-        .config-area button {
-            background: #34a853; color: white; border: none; padding: 10px 18px;
-            border-radius: 8px; font-weight: 600; cursor: pointer;
-        }
-        .config-area button:active { background: #1e7e34; }
-        .small { font-size: 12px; color: #666; }
-    </style>
+      }
+    }
+  </script>
 </head>
-<body>
+<body class="bg-[#0b0f19] text-slate-100 overflow-x-hidden min-h-screen dark:bg-[#0b0f19] dark:text-slate-100 light:bg-slate-50 light:text-slate-900 transition-colors duration-200">
 
-<div class="container">
+  <div id="root"></div>
 
-    <!-- Navegação entre modos -->
-    <div class="nav-buttons">
-        <button id="btn-mode-barcode" class="active">📷 Leitor de Código</button>
-        <button id="btn-mode-audio">🎤 Reconhecimento de Voz</button>
-    </div>
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
 
-    <!-- ========== MODO LEITOR DE CÓDIGO ========== -->
-    <div id="mode-barcode" class="card active">
-        <h2>📷 Leitor de Código de Barras</h2>
-        <div id="camera-container">
-            <video id="video" autoplay playsinline></video>
-            <div id="scan-line"></div>
-        </div>
-        <button id="btn-start-camera" class="btn-primary">📸 Iniciar Câmera</button>
-        <div class="result-box">
-            <span class="label">Produto:</span> <span id="product-name">Aguardando...</span><br>
-            <span class="label">Marca:</span> <span id="product-brand">-</span>
-        </div>
-        <div class="status" id="barcode-status">Clique em "Iniciar Câmera" e aponte para o código.</div>
+    function formatDateDDMMYYYY(dateStr) {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      return dateStr;
+    }
 
-        <!-- Configuração da URL do GAS -->
-        <div class="config-area">
-            <input type="text" id="gas-url-input" placeholder="URL do Google Apps Script (ex: https://script.google.com/.../exec)">
-            <button id="btn-save-gas-url">💾 Salvar</button>
-        </div>
-        <div class="small" id="gas-url-status">URL atual: <span id="current-gas-url">não definida</span></div>
-    </div>
+    function compressImage(file, maxWidth=800, quality=0.7) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width, height = img.height;
+            if (width > maxWidth) { height = (maxWidth/width)*height; width = maxWidth; }
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
 
-    <!-- ========== MODO RECONHECIMENTO DE VOZ ========== -->
-    <div id="mode-audio" class="card">
-        <h2>🎤 Reconhecimento de Voz</h2>
-        <button id="btn-start-audio" class="btn-audio">🎙️ Ouvir e transcrever</button>
-        <div class="result-box">
-            <span class="label">Texto falado:</span><br>
-            <span id="audio-text">Clique no botão e fale...</span>
-        </div>
-        <div class="status" id="audio-status">Aguardando comando.</div>
-    </div>
+    function App() {
+      // Estados principais
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [darkMode, setDarkMode] = useState(true);
+      const [isLoading, setIsLoading] = useState(false);
+      const [notificacao, setNotificacao] = useState(null);
 
-</div>
+      // Dados
+      const [tarefas, setTarefas] = useState([]);
+      const [acessos, setAcessos] = useState([]);
+      const [permissoes, setPermissoes] = useState([]);
+      const [driveSpaceInfo, setDriveSpaceInfo] = useState(null);
 
-<script>
-    (function() {
-        "use strict";
+      // Filtros
+      const [filtroBusca, setFiltroBusca] = useState('');
+      const [filtroStatus, setFiltroStatus] = useState('');
+      const [filtroTipo, setFiltroTipo] = useState('');
+      const [filtroLoja, setFiltroLoja] = useState('');
+      const [filtroExecutor, setFiltroExecutor] = useState('');
 
-        // ==================== ELEMENTOS ====================
-        const btnModeBarcode = document.getElementById('btn-mode-barcode');
-        const btnModeAudio = document.getElementById('btn-mode-audio');
-        const modeBarcode = document.getElementById('mode-barcode');
-        const modeAudio = document.getElementById('mode-audio');
+      // Filtros relatórios
+      const [filtroDataInicio, setFiltroDataInicio] = useState('');
+      const [filtroDataFim, setFiltroDataFim] = useState('');
+      const [filtroExecutorRel, setFiltroExecutorRel] = useState('');
+      const [filtroLojaRel, setFiltroLojaRel] = useState('');
 
-        const video = document.getElementById('video');
-        const btnCamera = document.getElementById('btn-start-camera');
-        const productName = document.getElementById('product-name');
-        const productBrand = document.getElementById('product-brand');
-        const barcodeStatus = document.getElementById('barcode-status');
+      // Modais
+      const [showAddModal, setShowAddModal] = useState(false);
+      const [showViewModal, setShowViewModal] = useState(false);
+      const [selectedTask, setSelectedTask] = useState(null);
+      const [novaTarefa, setNovaTarefa] = useState({ tipoTarefa:'', executor:'', nomeLoja:'', dataLimite:'', descricao:'', foto:'' });
+      const [loadingSalvar, setLoadingSalvar] = useState(false);
 
-        const btnAudio = document.getElementById('btn-start-audio');
-        const audioText = document.getElementById('audio-text');
-        const audioStatus = document.getElementById('audio-status');
+      // Novo colaborador
+      const [novoAcesso, setNovoAcesso] = useState({ nome:'', usuario:'', senha:'', perfil:'', loja:'', email:'', telefone:'' });
 
-        const gasUrlInput = document.getElementById('gas-url-input');
-        const btnSaveGas = document.getElementById('btn-save-gas-url');
-        const currentGasUrlSpan = document.getElementById('current-gas-url');
+      // Modo de visualização
+      const [viewMode, setViewMode] = useState('cards');
 
-        // ==================== VARIÁVEIS ====================
-        let stream = null;
-        let barcodeDetector = null;
-        let scanInterval = null;
-        let lastProductData = null;
+      // Observação e foto de execução
+      const [observacaoExecucao, setObservacaoExecucao] = useState('');
+      const [fotoExecucaoFile, setFotoExecucaoFile] = useState(null);
+      const [fotoExecucaoPreview, setFotoExecucaoPreview] = useState('');
+      const [loadingAtualizacao, setLoadingAtualizacao] = useState(false);
 
-        let recognition = null;
-        let isRecognizing = false;
+      // Estados para edição de acesso
+      const [editAcesso, setEditAcesso] = useState(null);
+      const [showEditModal, setShowEditModal] = useState(false);
 
-        // ==================== GERENCIAMENTO DA URL DO GAS ====================
-        function loadGasUrl() {
-            const saved = localStorage.getItem('gas_url');
-            if (saved) {
-                gasUrlInput.value = saved;
-                currentGasUrlSpan.textContent = saved;
+      const mostrarNotificacao = (texto, tipo='sucesso') => {
+        setNotificacao({ texto, tipo });
+        setTimeout(() => setNotificacao(null), 3500);
+      };
+
+      // Carregar dados da planilha
+      const carregarDadosDoPlanilha = () => {
+        setIsLoading(true);
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler((dadosTar) => { setTarefas(dadosTar || []); setIsLoading(false); })
+            .withFailureHandler((err) => { mostrarNotificacao("Erro ao ler tarefas: "+err.message, "erro"); setIsLoading(false); })
+            .lerTarefas();
+
+          google.script.run
+            .withSuccessHandler((dadosAc) => setAcessos(dadosAc || []))
+            .lerAcessos();
+
+          google.script.run
+            .withSuccessHandler((dadosPerm) => setPermissoes(dadosPerm || []))
+            .lerPermissoes();
+
+          google.script.run
+            .withSuccessHandler((info) => setDriveSpaceInfo(info))
+            .withFailureHandler(() => setDriveSpaceInfo(null))
+            .obterEspacoPasta('16J48GgLEmurDT79SxxZfuXYoSticoZtPvIS0ZubG4sM');
+        } else {
+          // Simulação local (apenas para desenvolvimento)
+          setTimeout(() => {
+            setTarefas([
+              { id:"T-01", tipoTarefa:"Inventário de Estoque", executor:"Edwinson", nomeLoja:"Loja Centro", dataLimite:"2026-06-25", descricao:"Contagem anual e auditoria geral de estoque.", foto:"", status:"Concluída", observacao:"", fotoExecucao:"" },
+              { id:"T-02", tipoTarefa:"Limpeza / Organização", executor:"Wagner", nomeLoja:"Loja Norte", dataLimite:"2026-06-28", descricao:"Limpeza profunda dos aparelhos de ar-condicionado.", foto:"", status:"Vencida", observacao:"", fotoExecucao:"" }
+            ]);
+            setAcessos([
+              { id:"1", nome:"Edwin Alves", usuario:"Edwinson", senha:"1", perfil:"Gerente", loja:"Loja Centro", email:"", telefone:"", status:"Ativo" },
+              { id:"2", nome:"Wagner Oliveira", usuario:"Wagner", senha:"1276", perfil:"Gerente", loja:"Loja Norte", email:"", telefone:"", status:"Ativo" },
+              { id:"3", nome:"Francisco Almei", usuario:"Francisco", senha:"3", perfil:"Executor", loja:"Loja Sul", email:"", telefone:"", status:"Ativo" }
+            ]);
+            setPermissoes([
+              { perfil:"Gerente", dashboard:true, tarefas:true, relatorio:true, visualizar:true, incluir:true, excluir:true, exportar:true },
+              { perfil:"Executor", dashboard:false, tarefas:true, relatorio:true, visualizar:true, incluir:true, excluir:false, exportar:false }
+            ]);
+            setDriveSpaceInfo({ folderSize:125000000, quotaTotal:15*1024*1024*1024, quotaUsed:5*1024*1024*1024, percent:0.8 });
+            setIsLoading(false);
+          }, 800);
+        }
+      };
+
+      useEffect(() => { carregarDadosDoPlanilha(); }, []);
+
+      useEffect(() => {
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }, [isAuthenticated, activeTab, tarefas, notificacao, showAddModal, showViewModal, acessos, driveSpaceInfo, showEditModal]);
+
+      useEffect(() => {
+        const rootNode = document.documentElement;
+        if (darkMode) { rootNode.classList.add('dark'); rootNode.classList.remove('light'); rootNode.style.backgroundColor='#0b0f19'; }
+        else { rootNode.classList.add('light'); rootNode.classList.remove('dark'); rootNode.style.backgroundColor='#f8fafc'; }
+      }, [darkMode]);
+
+      // Atualizar o perfil do novoAcesso quando permissoes carregar
+      useEffect(() => {
+        if (permissoes.length > 0 && !novoAcesso.perfil) {
+          const perfisUnicos = [...new Set(permissoes.map(p => p.perfil))];
+          setNovoAcesso(prev => ({ ...prev, perfil: perfisUnicos[0] || '' }));
+        }
+      }, [permissoes]);
+
+      const activePermissions = useMemo(() => {
+        if (!currentUser) return { dashboard:false, tarefas:true, relatorio:false, visualizar:true, incluir:false, excluir:false, exportar:false };
+        const matching = permissoes.find(p => p.perfil.toLowerCase() === currentUser.perfil.toLowerCase());
+        return matching || { dashboard:true, tarefas:true, relatorio:true, visualizar:true, incluir:true, excluir:true, exportar:true };
+      }, [currentUser, permissoes]);
+
+      const lojasDisponiveis = useMemo(() => {
+        const lojas = acessos.map(a => a.loja).filter(l => l && l.trim() !== '');
+        return [...new Set(lojas)];
+      }, [acessos]);
+
+      const executoresDisponiveis = useMemo(() => {
+        const execs = tarefas.map(t => t.executor).filter(e => e && e.trim() !== '');
+        return [...new Set(execs)];
+      }, [tarefas]);
+
+      // Login
+      const handleLoginSubmit = (e) => {
+        e.preventDefault();
+        const u = e.target.username.value;
+        const s = e.target.password.value;
+        setIsLoading(true);
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler((res) => {
+              setIsLoading(false);
+              if (res.sucesso) {
+                setCurrentUser(res.usuario);
+                setIsAuthenticated(true);
+                mostrarNotificacao(`Olá, ${res.usuario.nome}!`);
+              } else {
+                mostrarNotificacao(res.mensagem, "erro");
+              }
+            })
+            .withFailureHandler((err) => {
+              setIsLoading(false);
+              mostrarNotificacao("Erro no servidor: "+err.message, "erro");
+            })
+            .autenticarUsuario(u, s);
+        } else {
+          // Simulação local
+          setTimeout(() => {
+            setIsLoading(false);
+            const found = acessos.find(ac => ac.usuario.toLowerCase() === u.trim().toLowerCase() && ac.senha === s);
+            if (found) {
+              setCurrentUser(found);
+              setIsAuthenticated(true);
+              mostrarNotificacao(`Sessão iniciada como ${found.nome}`);
             } else {
-                currentGasUrlSpan.textContent = 'não definida (use o campo acima)';
+              mostrarNotificacao("Usuário ou senha inválidos.", "erro");
             }
+          }, 600);
         }
-        function saveGasUrl() {
-            const url = gasUrlInput.value.trim();
-            if (url) {
-                localStorage.setItem('gas_url', url);
-                currentGasUrlSpan.textContent = url;
-                alert('URL salva com sucesso!');
-            } else {
-                alert('Por favor, insira uma URL válida.');
-            }
+      };
+
+      const handleLogout = () => {
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        mostrarNotificacao("Sessão finalizada.");
+      };
+
+      // Salvar tarefa
+      const handleSaveTarefa = (e) => {
+        e.preventDefault();
+        if (!activePermissions.incluir) {
+          mostrarNotificacao("Seu perfil não tem permissão para incluir tarefas.", "erro");
+          return;
         }
-        function getGasUrl() {
-            return localStorage.getItem('gas_url') || '';
+        setLoadingSalvar(true);
+        const count = tarefas.length + 1;
+        const nextId = "T-" + String(count).padStart(2,'0');
+        const tObj = { ...novaTarefa, id: nextId, status:'Pendente', observacao:'', fotoExecucao:'' };
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => {
+              setLoadingSalvar(false);
+              setShowAddModal(false);
+              mostrarNotificacao("Tarefa gravada com sucesso!");
+              setNovaTarefa({ tipoTarefa:'', executor:'', nomeLoja:'', dataLimite:'', descricao:'', foto:'' });
+              carregarDadosDoPlanilha();
+            })
+            .withFailureHandler((err) => {
+              setLoadingSalvar(false);
+              mostrarNotificacao("Falha ao gravar: "+err.message, "erro");
+            })
+            .cadastrarTarefa(tObj, novaTarefa.foto);
+        } else {
+          setTimeout(() => {
+            setTarefas([...tarefas, tObj]);
+            setLoadingSalvar(false);
+            setShowAddModal(false);
+            mostrarNotificacao("Tarefa incluída (Simulação)!");
+            setNovaTarefa({ tipoTarefa:'', executor:'', nomeLoja:'', dataLimite:'', descricao:'', foto:'' });
+          }, 600);
         }
+      };
 
-        loadGasUrl();
-        btnSaveGas.addEventListener('click', saveGasUrl);
+      const handleFotoChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => setNovaTarefa({ ...novaTarefa, foto: reader.result });
+        reader.readAsDataURL(file);
+      };
 
-        // ==================== ALTERNAR MODOS ====================
-        function setMode(mode) {
-            // remove active de todos
-            document.querySelectorAll('.card').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.nav-buttons button').forEach(el => el.classList.remove('active'));
-
-            if (mode === 'barcode') {
-                modeBarcode.classList.add('active');
-                btnModeBarcode.classList.add('active');
-                // Se a câmera estiver rodando, mantém
-            } else {
-                modeAudio.classList.add('active');
-                btnModeAudio.classList.add('active');
-                // Para a câmera se estiver rodando para economizar bateria
-                if (stream && stream.active) {
-                    stopCamera();
-                }
-            }
+      // Alterar status
+      const handleAlterarStatus = (id, novoStatus) => {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => { mostrarNotificacao(`Tarefa atualizada para ${novoStatus}`); carregarDadosDoPlanilha(); })
+            .withFailureHandler((err) => mostrarNotificacao("Erro ao atualizar: "+err.message, "erro"))
+            .atualizarStatusTarefa(id, novoStatus);
+        } else {
+          setTarefas(tarefas.map(t => t.id===id ? {...t, status:novoStatus} : t));
+          mostrarNotificacao(`Status alterado para ${novoStatus} (Simulado).`);
         }
+      };
 
-        btnModeBarcode.addEventListener('click', () => setMode('barcode'));
-        btnModeAudio.addEventListener('click', () => setMode('audio'));
-
-        // ==================== LEITOR DE CÓDIGO ====================
-        async function startCamera() {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 640 } }
-                });
-                video.srcObject = stream;
-                await video.play();
-
-                if (!('BarcodeDetector' in window)) {
-                    barcodeStatus.textContent = '❌ BarcodeDetector não suportado. Use Chrome/Edge no Android.';
-                    return;
-                }
-
-                barcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'] });
-                btnCamera.textContent = '⏹️ Parar Câmera';
-                barcodeStatus.textContent = '📸 Câmera ativa. Aguardando código...';
-
-                if (scanInterval) clearInterval(scanInterval);
-                scanInterval = setInterval(scanBarcode, 500);
-            } catch (err) {
-                console.error(err);
-                barcodeStatus.textContent = '❌ Erro ao acessar câmera: ' + err.message;
-            }
+      // Excluir tarefa
+      const handleDeletarTarefa = (id) => {
+        if (!activePermissions.excluir) { mostrarNotificacao("Sem permissão para excluir.", "erro"); return; }
+        if (!confirm("Excluir esta tarefa definitivamente da planilha?")) return;
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => { mostrarNotificacao("Tarefa excluída definitivamente!"); carregarDadosDoPlanilha(); })
+            .withFailureHandler((err) => mostrarNotificacao("Erro: "+err.message, "erro"))
+            .excluirTarefaPlanilha(id);
+        } else {
+          setTarefas(tarefas.filter(t => t.id!==id));
+          mostrarNotificacao("Tarefa removida (Simulado).");
         }
+      };
 
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            video.srcObject = null;
-            if (scanInterval) {
-                clearInterval(scanInterval);
-                scanInterval = null;
-            }
-            btnCamera.textContent = '📸 Iniciar Câmera';
-            barcodeStatus.textContent = 'Câmera parada. Clique em "Iniciar Câmera" para recomeçar.';
+      // Atualizar observação e foto de execução
+      const handleAtualizarExecucao = async () => {
+        if (!selectedTask) return;
+        setLoadingAtualizacao(true);
+        let fotoBase64 = '';
+        if (fotoExecucaoFile) fotoBase64 = await compressImage(fotoExecucaoFile, 800, 0.7);
+        const payload = { id: selectedTask.id, observacao: observacaoExecucao, fotoExecucao: fotoBase64 };
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => {
+              setLoadingAtualizacao(false);
+              mostrarNotificacao("Observação e foto atualizadas!");
+              setShowViewModal(false);
+              setObservacaoExecucao('');
+              setFotoExecucaoFile(null);
+              setFotoExecucaoPreview('');
+              carregarDadosDoPlanilha();
+            })
+            .withFailureHandler((err) => {
+              setLoadingAtualizacao(false);
+              mostrarNotificacao("Erro ao atualizar: "+err.message, "erro");
+            })
+            .atualizarTarefaComObservacao(payload.id, payload.observacao, payload.fotoExecucao);
+        } else {
+          setTimeout(() => {
+            setTarefas(tarefas.map(t => t.id===selectedTask.id ? {...t, observacao:observacaoExecucao, fotoExecucao:fotoBase64||t.fotoExecucao} : t));
+            setLoadingAtualizacao(false);
+            setShowViewModal(false);
+            setObservacaoExecucao('');
+            setFotoExecucaoFile(null);
+            setFotoExecucaoPreview('');
+            mostrarNotificacao("Atualizado (Simulação)");
+          }, 600);
         }
+      };
 
-        async function scanBarcode() {
-            if (!barcodeDetector || !video.videoWidth) return;
-            try {
-                const barcodes = await barcodeDetector.detect(video);
-                if (barcodes.length > 0) {
-                    const code = barcodes[0].rawValue;
-                    barcodeStatus.textContent = '✅ Código lido: ' + code + ' – Buscando...';
-                    await lookupProduct(code);
-                }
-            } catch (err) { /* silencia */ }
+      // Adicionar colaborador
+      const handleAdicionarAcesso = (e) => {
+        e.preventDefault();
+        const nid = String(acessos.length + 1);
+        const nobj = { ...novoAcesso, id: nid, status:"Ativo" };
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => {
+              mostrarNotificacao("Colaborador gravado com sucesso!");
+              setNovoAcesso({ nome:'', usuario:'', senha:'', perfil: [...new Set(permissoes.map(p => p.perfil))][0] || '', loja:lojasDisponiveis[0]||'', email:'', telefone:'' });
+              carregarDadosDoPlanilha();
+            })
+            .withFailureHandler((err) => mostrarNotificacao("Erro: "+err.message, "erro"))
+            .incluirNovoAcesso(nobj);
+        } else {
+          setAcessos([...acessos, nobj]);
+          mostrarNotificacao("Novo colaborador cadastrado (Simulado)!");
+          setNovoAcesso({ nome:'', usuario:'', senha:'', perfil:[...new Set(permissoes.map(p => p.perfil))][0] || '', loja:lojasDisponiveis[0]||'', email:'', telefone:'' });
         }
+      };
 
-        // ---------- BEEP ----------
-        function playBeep() {
-            try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.frequency.value = 800;
-                osc.type = 'sine';
-                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-                osc.start(audioCtx.currentTime);
-                osc.stop(audioCtx.currentTime + 0.2);
-                setTimeout(() => { if (audioCtx.state === 'running') audioCtx.suspend(); }, 500);
-            } catch (e) { /* ignora */ }
+      // Excluir acesso
+      const handleExcluirAcesso = (id) => {
+        if (!confirm("Deseja realmente excluir este colaborador?")) return;
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => {
+              mostrarNotificacao("Colaborador excluído com sucesso!");
+              carregarDadosDoPlanilha();
+            })
+            .withFailureHandler((err) => mostrarNotificacao("Erro ao excluir: "+err.message, "erro"))
+            .excluirAcesso(id);
+        } else {
+          setAcessos(acessos.filter(a => a.id !== id));
+          mostrarNotificacao("Colaborador removido (Simulação).");
         }
+      };
 
-        // ---------- CONSULTA PRODUTO E ENVIO ----------
-        async function lookupProduct(code) {
-            try {
-                const url = `https://br.openfoodfacts.org/api/v0/produto/${code}.json`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Erro na API');
-                const data = await response.json();
-
-                if (data.status === 1) {
-                    const product = data.product;
-                    const name = product.product_name || 'Nome não disponível';
-                    const brand = product.brands || 'Marca não disponível';
-
-                    playBeep(); // 🔔 Toca o som
-
-                    productName.textContent = name;
-                    productBrand.textContent = brand;
-                    barcodeStatus.textContent = '✅ Produto encontrado! Enviando...';
-
-                    lastProductData = { code, name, brand, timestamp: new Date().toISOString() };
-
-                    // Envia para o GAS se a URL estiver configurada
-                    const gasUrl = getGasUrl();
-                    if (gasUrl) {
-                        await sendToGAS(gasUrl, lastProductData);
-                        barcodeStatus.textContent = '✅ Produto enviado para a planilha!';
-                    } else {
-                        barcodeStatus.textContent = '✅ Produto encontrado (mas GAS não configurado)';
-                    }
-                } else {
-                    productName.textContent = '❌ Produto não encontrado';
-                    productBrand.textContent = '-';
-                    barcodeStatus.textContent = '⚠️ Código não cadastrado no Open Food Facts.';
-                    lastProductData = null;
-                }
-            } catch (err) {
-                console.error(err);
-                productName.textContent = '❌ Erro na consulta';
-                productBrand.textContent = '-';
-                barcodeStatus.textContent = '❌ Falha ao buscar: ' + err.message;
-                lastProductData = null;
-            }
+      // Editar acesso
+      const handleEditarAcesso = (e) => {
+        e.preventDefault();
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          google.script.run
+            .withSuccessHandler(() => {
+              mostrarNotificacao("Dados atualizados com sucesso!");
+              setShowEditModal(false);
+              carregarDadosDoPlanilha();
+            })
+            .withFailureHandler((err) => mostrarNotificacao("Erro ao atualizar: "+err.message, "erro"))
+            .atualizarAcesso(editAcesso);
+        } else {
+          setAcessos(acessos.map(a => a.id === editAcesso.id ? editAcesso : a));
+          setShowEditModal(false);
+          mostrarNotificacao("Dados atualizados (Simulação).");
         }
+      };
 
-        async function sendToGAS(gasUrl, data) {
-            try {
-                await fetch(gasUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                console.log('Dados enviados para GAS:', data);
-            } catch (err) {
-                console.error('Erro no envio:', err);
-                throw err;
-            }
-        }
-
-        btnCamera.addEventListener('click', function() {
-            if (stream && stream.active) {
-                stopCamera();
-            } else {
-                startCamera();
-            }
+      // Estatísticas
+      const stats = useMemo(() => {
+        const total = tarefas.length;
+        const concluidas = tarefas.filter(t => t.status==='Concluída').length;
+        const pendentes = tarefas.filter(t => t.status==='Pendente').length;
+        const vencidas = tarefas.filter(t => t.status==='Vencida').length;
+        const progresso = total>0 ? Math.round((concluidas/total)*100) : 0;
+        const porExecutor = {};
+        tarefas.forEach(t => {
+          if (!porExecutor[t.executor]) porExecutor[t.executor] = { total:0, concluidas:0, pendentes:0, vencidas:0 };
+          porExecutor[t.executor].total++;
+          if (t.status==='Concluída') porExecutor[t.executor].concluidas++;
+          else if (t.status==='Pendente') porExecutor[t.executor].pendentes++;
+          else if (t.status==='Vencida') porExecutor[t.executor].vencidas++;
         });
+        const proximas = tarefas.filter(t=>t.status==='Pendente').sort((a,b)=>a.dataLimite.localeCompare(b.dataLimite)).slice(0,5);
+        return { total, concluidas, pendentes, vencidas, progresso, porExecutor, proximas };
+      }, [tarefas]);
 
-        // ==================== RECONHECIMENTO DE VOZ ====================
-        function initSpeech() {
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                audioStatus.textContent = '❌ Reconhecimento de voz não suportado.';
-                return false;
-            }
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            recognition.lang = 'pt-BR';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-
-            recognition.onstart = function() {
-                isRecognizing = true;
-                audioStatus.textContent = '🎤 Ouvindo... Fale agora.';
-                btnAudio.textContent = '⏹️ Parar (ouvindo...)';
-                btnAudio.disabled = false;
-            };
-
-            recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                audioText.textContent = transcript;
-                audioStatus.textContent = '✅ Transcrição concluída.';
-                btnAudio.textContent = '🎙️ Ouvir e transcrever';
-                isRecognizing = false;
-            };
-
-            recognition.onerror = function(event) {
-                console.error('Erro:', event.error);
-                if (event.error === 'not-allowed') {
-                    audioStatus.textContent = '❌ Permissão de microfone negada.';
-                } else {
-                    audioStatus.textContent = '⚠️ Erro: ' + event.error;
-                }
-                btnAudio.textContent = '🎙️ Ouvir e transcrever';
-                isRecognizing = false;
-                btnAudio.disabled = false;
-            };
-
-            recognition.onend = function() {
-                if (isRecognizing) {
-                    // Se terminou sem resultado
-                    audioStatus.textContent = '🔄 Nada foi ouvido. Tente novamente.';
-                }
-                isRecognizing = false;
-                btnAudio.textContent = '🎙️ Ouvir e transcrever';
-                btnAudio.disabled = false;
-            };
-
-            return true;
-        }
-
-        function toggleAudio() {
-            if (!recognition) {
-                const ok = initSpeech();
-                if (!ok) return;
-            }
-            if (isRecognizing) {
-                try { recognition.stop(); } catch(e) {}
-                return;
-            }
-            try {
-                recognition.start();
-                btnAudio.disabled = true;
-            } catch (err) {
-                console.error(err);
-                audioStatus.textContent = '❌ Erro ao iniciar: ' + err.message;
-                btnAudio.disabled = false;
-            }
-        }
-
-        btnAudio.addEventListener('click', toggleAudio);
-
-        // Inicializa suporte (mas não inicia)
-        initSpeech();
-
-        // ==================== LIMPEZA ====================
-        window.addEventListener('beforeunload', function() {
-            stopCamera();
-            if (recognition && isRecognizing) recognition.stop();
+      // Tarefas filtradas (aba tarefas)
+      const tarefasFiltradas = useMemo(() => {
+        return tarefas.filter(t => {
+          const matchBusca = !filtroBusca || t.tipoTarefa.toLowerCase().includes(filtroBusca.toLowerCase()) || t.descricao.toLowerCase().includes(filtroBusca.toLowerCase()) || t.id.toLowerCase().includes(filtroBusca.toLowerCase());
+          const matchStatus = !filtroStatus || t.status===filtroStatus;
+          const matchTipo = !filtroTipo || t.tipoTarefa===filtroTipo;
+          const matchLoja = !filtroLoja || t.nomeLoja===filtroLoja;
+          const matchExecutor = !filtroExecutor || t.executor===filtroExecutor;
+          return matchBusca && matchStatus && matchTipo && matchLoja && matchExecutor;
         });
+      }, [tarefas, filtroBusca, filtroStatus, filtroTipo, filtroLoja, filtroExecutor]);
 
-        // Se o modo ativo for áudio, para a câmera
-        if (document.getElementById('mode-audio').classList.contains('active')) {
-            if (stream && stream.active) stopCamera();
-        }
+      // Tarefas filtradas (relatórios)
+      const tarefasRelFiltradas = useMemo(() => {
+        return tarefas.filter(t => {
+          let match = true;
+          if (filtroDataInicio && t.dataLimite < filtroDataInicio) match = false;
+          if (filtroDataFim && t.dataLimite > filtroDataFim) match = false;
+          if (filtroExecutorRel && t.executor !== filtroExecutorRel) match = false;
+          if (filtroLojaRel && t.nomeLoja !== filtroLojaRel) match = false;
+          return match;
+        });
+      }, [tarefas, filtroDataInicio, filtroDataFim, filtroExecutorRel, filtroLojaRel]);
 
-    })();
-</script>
+      // Exportações
+      const handleExportCsv = () => {
+        if (!activePermissions.exportar) { mostrarNotificacao("Sem permissão para exportar.", "erro"); return; }
+        let csv = "ID,Tipo da Tarefa,Executor,Loja,Data Limite,Status,Descricao\n";
+        tarefasRelFiltradas.forEach(t => {
+          csv += `"${t.id}","${t.tipoTarefa}","${t.executor}","${t.nomeLoja}","${t.dataLimite}","${t.status}","${t.descricao.replace(/"/g,'""')}"\n`;
+        });
+        const uri = "data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
+        const dlink = document.createElement("a");
+        dlink.setAttribute("href", uri);
+        dlink.setAttribute("download", "sgt_tarefas_consolidado.csv");
+        document.body.appendChild(dlink);
+        dlink.click();
+        document.body.removeChild(dlink);
+        mostrarNotificacao("CSV baixado com sucesso!");
+      };
+
+     const handleExportPdf = () => {
+  if (!activePermissions.exportar) { mostrarNotificacao("Sem permissão para exportar.", "erro"); return; }
+
+  // Criar um elemento temporário para capturar apenas a tabela com estilo limpo
+  const tableElement = document.getElementById('relatorio-table-container');
+  if (!tableElement) return;
+
+  // Clonar o container para não afetar a tela
+  const clone = tableElement.cloneNode(true);
+  
+  // Remover estilos de fundo escuro e aplicar estilo de impressão
+  clone.style.background = '#ffffff';
+  clone.style.color = '#000000';
+  clone.style.padding = '20px';
+  clone.style.borderRadius = '0';
+  clone.style.boxShadow = 'none';
+  clone.style.border = '1px solid #ccc';
+  clone.style.width = '100%';
+  clone.style.fontFamily = 'Arial, sans-serif';
+
+  // Ajustar cabeçalho da tabela (negrito)
+  const ths = clone.querySelectorAll('th');
+  ths.forEach(th => {
+    th.style.fontWeight = 'bold';
+    th.style.backgroundColor = '#f0f0f0';
+    th.style.color = '#000000';
+    th.style.border = '1px solid #ccc';
+    th.style.padding = '8px';
+    th.style.textAlign = 'left';
+  });
+
+  const tds = clone.querySelectorAll('td');
+  tds.forEach(td => {
+    td.style.border = '1px solid #ccc';
+    td.style.padding = '8px';
+    td.style.color = '#000000';
+  });
+
+  // Adicionar título
+  const title = document.createElement('h2');
+  title.textContent = 'Relatório de Tarefas - Consolidado';
+  title.style.fontWeight = 'bold';
+  title.style.marginBottom = '15px';
+  title.style.fontSize = '18px';
+  title.style.color = '#000000';
+  clone.prepend(title);
+
+  // Adicionar data de geração
+  const dateInfo = document.createElement('p');
+  dateInfo.textContent = `Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`;
+  dateInfo.style.marginBottom = '15px';
+  dateInfo.style.fontSize = '12px';
+  dateInfo.style.color = '#555';
+  clone.prepend(dateInfo);
+
+  // Colocar o clone em um container off-screen para captura
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '0';
+  container.style.background = '#ffffff';
+  container.style.padding = '20px';
+  container.style.width = '800px'; // largura fixa para legibilidade
+  container.appendChild(clone);
+  document.body.appendChild(container);
+
+  html2canvas(container, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    logging: false
+  }).then((canvas) => {
+    document.body.removeChild(container);
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save('relatorio_tarefas.pdf');
+    mostrarNotificacao("PDF gerado com sucesso!");
+  }).catch((err) => {
+    document.body.removeChild(container);
+    mostrarNotificacao("Erro ao gerar PDF.", "erro");
+  });
+};
+
+      const handleExportExcel = () => {
+        if (!activePermissions.exportar) { mostrarNotificacao("Sem permissão para exportar.", "erro"); return; }
+        const data = tarefasRelFiltradas.map(t => ({
+          ID: t.id, Tipo: t.tipoTarefa, Executor: t.executor, Loja: t.nomeLoja,
+          'Data Limite': t.dataLimite, Status: t.status, Descrição: t.descricao
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Tarefas");
+        XLSX.writeFile(wb, "relatorio_tarefas.xlsx");
+        mostrarNotificacao("Excel gerado com sucesso!");
+      };
+
+      // Tela de login
+      if (!isAuthenticated) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4 bg-[#080b13]">
+            {isLoading && (
+              <div className="fixed inset-0 z-50 bg-[#080b13]/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                <div className="w-10 h-10 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+                <p className="text-xs font-mono text-indigo-400">Verificando credenciais...</p>
+              </div>
+            )}
+            <div className="w-full max-w-md glass-card rounded-2xl p-8 shadow-2xl relative border border-white/5 overflow-hidden">
+              {notificacao && (
+                <div className={`absolute top-4 left-4 right-4 p-3 rounded-lg text-xs font-semibold flex items-center gap-2 border ${notificacao.tipo==='erro'?'bg-red-500/10 border-red-500/20 text-red-400':'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+                  {notificacao.texto}
+                </div>
+              )}
+              <div className="text-center space-y-3 mb-8 pt-4">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-black mx-auto shadow-lg shadow-indigo-500/20 animate-pulse">G</div>
+                <div>
+                  <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white">Gestão de Tarefas Inteligentes</h1>
+                  <p className="text-xs md:text-sm text-slate-400 font-medium">Controle e Designação Operacional</p>
+                </div>
+              </div>
+              <form onSubmit={handleLoginSubmit} className="space-y-5">
+                <div>
+                  <label className="block text-xs md:text-sm font-bold text-slate-300 mb-1.5 uppercase tracking-wider font-mono">Usuário</label>
+                  <input type="text" name="username" required placeholder="Digite seu usuário" className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3.5 text-sm md:text-base focus:outline-none focus:border-indigo-500 text-slate-100 font-mono transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs md:text-sm font-bold text-slate-300 mb-1.5 uppercase tracking-wider font-mono">Senha</label>
+                  <input type="password" name="password" required placeholder="Sua senha secreta" className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3.5 text-sm md:text-base focus:outline-none focus:border-indigo-500 text-slate-100 transition-all" />
+                </div>
+                <button type="submit" className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm md:text-base font-bold shadow-lg shadow-indigo-600/20 transition-all cursor-pointer mt-2">Entrar no Sistema</button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // Renderização principal
+      return (
+        <div className="min-h-screen flex flex-col md:flex-row transition-all duration-200">
+          {notificacao && (
+            <div className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-xl flex items-center gap-3 border animate-fade-in ${notificacao.tipo==='erro'?'bg-red-500/10 border-red-500/20 text-red-400':'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'}`}>
+              <div className="w-2 h-2 rounded-full bg-current animate-pulse"></div>
+              <span className="text-xs font-semibold">{notificacao.texto}</span>
+            </div>
+          )}
+          {isLoading && (
+            <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-xs flex items-center justify-center">
+              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+
+          {/* Mobile header */}
+          <header className="md:hidden flex flex-col bg-slate-900 dark:bg-slate-900 light:bg-white border-b border-white/5 sticky top-0 z-40 shadow-md">
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-lg shadow-md">G</div>
+                <div><h1 className="text-base font-bold text-white dark:text-white light:text-slate-900">Gestão de Tarefas</h1></div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg bg-slate-800 dark:bg-slate-800 light:bg-slate-100 text-slate-400 hover:text-white"><i data-lucide={darkMode?"sun":"moon"} className="w-5 h-5"></i></button>
+                <button onClick={handleLogout} className="p-2 rounded-lg bg-red-500/10 text-red-400"><i data-lucide="log-out" className="w-5 h-5"></i></button>
+              </div>
+            </div>
+            <div className="px-4 pb-2.5 pt-1.5 border-t border-white/5 flex items-center justify-between bg-slate-950/20">
+              <span className="text-sm font-bold text-emerald-400">Olá, {currentUser?.nome}! 👋</span>
+              <span className="text-xs font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded">{currentUser?.perfil}</span>
+            </div>
+          </header>
+
+          {/* Mobile tabs */}
+          <div className="md:hidden bg-slate-900/90 dark:bg-slate-900/90 light:bg-white/90 border-b border-white/5 px-2 py-2 flex items-center gap-1.5 overflow-x-auto sticky top-[95px] z-30">
+            {['dashboard','tarefas','relatorios'].concat(currentUser?.perfil==='Gerente'?['acessos']:[]).map(tab => (
+              <button key={tab} onClick={()=>setActiveTab(tab)} className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab===tab?'bg-indigo-500/10 text-indigo-400':'text-slate-400'}`}>
+                {tab==='dashboard' && 'Dashboard'}
+                {tab==='tarefas' && 'Tarefas'}
+                {tab==='relatorios' && 'Relatórios'}
+                {tab==='acessos' && 'Colaboradores'}
+              </button>
+            ))}
+          </div>
+
+          {/* Sidebar desktop */}
+          <aside className="hidden md:flex w-64 border-r border-white/5 flex-col bg-slate-900 dark:bg-slate-900 light:bg-white shrink-0 p-6 justify-between select-none shadow-xl">
+            <div className="space-y-8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-500/20">G</div>
+                <div><h1 className="text-sm font-bold tracking-tight text-slate-100 dark:text-slate-100 light:text-slate-900 leading-tight">Gestão de Tarefas</h1><p className="text-xs text-indigo-400 font-bold font-mono tracking-wider uppercase">Inteligentes</p></div>
+              </div>
+              <nav className="flex flex-col gap-1.5">
+                <button onClick={()=>setActiveTab('dashboard')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab==='dashboard'?'bg-indigo-500/10 text-indigo-400 border-l-2 border-indigo-500':'text-slate-400 hover:text-white hover:bg-slate-850/30'}`}>
+                  <i data-lucide="layout-dashboard" className="w-5 h-5"></i><span>Dashboard Geral</span>
+                </button>
+                <button onClick={()=>setActiveTab('tarefas')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab==='tarefas'?'bg-indigo-500/10 text-indigo-400 border-l-2 border-indigo-500':'text-slate-400 hover:text-white hover:bg-slate-850/30'}`}>
+                  <i data-lucide="check-square" className="w-5 h-5"></i><span>Painel de Tarefas</span>
+                </button>
+                <button onClick={()=>setActiveTab('relatorios')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab==='relatorios'?'bg-indigo-500/10 text-indigo-400 border-l-2 border-indigo-500':'text-slate-400 hover:text-white hover:bg-slate-850/30'}`}>
+                  <i data-lucide="file-bar-chart" className="w-5 h-5"></i><span>Relatório Consolidado</span>
+                </button>
+                {currentUser?.perfil==='Gerente' && (
+                  <button onClick={()=>setActiveTab('acessos')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab==='acessos'?'bg-indigo-500/10 text-indigo-400 border-l-2 border-indigo-500':'text-slate-400 hover:text-white hover:bg-slate-850/30'}`}>
+                    <i data-lucide="users" className="w-5 h-5"></i><span>Colaboradores & Acesso</span>
+                  </button>
+                )}
+              </nav>
+            </div>
+            <div className="space-y-4 pt-6 border-t border-white/5">
+              <div className="p-3 bg-slate-950/40 dark:bg-slate-950/40 light:bg-slate-50 border border-white/5 rounded-xl space-y-2">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold text-xs">{currentUser.nome.charAt(0)}</div>
+                  <div className="overflow-hidden"><span className="text-xs font-bold text-slate-100 dark:text-slate-100 light:text-slate-950 block truncate">{currentUser.nome}</span><span className="text-[10px] text-slate-400 dark:text-slate-400 light:text-slate-500 block truncate font-mono">{currentUser.perfil}</span></div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={()=>setDarkMode(!darkMode)} className="flex-1 p-2 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 text-slate-300 dark:text-slate-300 light:text-slate-800 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5">
+                  <i data-lucide={darkMode?"sun":"moon"} className="w-3.5 h-3.5"></i><span>{darkMode?"Claro":"Escuro"}</span>
+                </button>
+                <button onClick={handleLogout} className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg flex items-center justify-center"><i data-lucide="log-out" className="w-4 h-4"></i></button>
+              </div>
+            </div>
+          </aside>
+
+          {/* Main content */}
+          <div className="flex-1 flex flex-col min-w-0 bg-[#0b0f19] dark:bg-[#0b0f19] light:bg-slate-50 transition-colors duration-200">
+            <header className="hidden md:flex items-center justify-between px-8 py-4 bg-slate-900 dark:bg-slate-900 light:bg-white border-b border-white/5 shadow-sm">
+              <div>
+                <span className="text-xs text-indigo-400 font-mono tracking-wider uppercase font-bold">Gestão de Tarefas Inteligentes • Controle Operacional</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-base font-bold text-slate-100 dark:text-slate-100 light:text-slate-950">Olá, {currentUser?.nome}! 👋</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="text-xs text-slate-400 dark:text-slate-400 light:text-slate-500 font-mono font-medium">Conectado ao Google Sheets</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={carregarDadosDoPlanilha} className="p-2 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 hover:opacity-80 rounded-lg text-sm font-bold flex items-center gap-1.5" title="Recarregar Planilha">
+                  <i data-lucide="refresh-cw" className="w-4 h-4"></i><span>Sincronizar</span>
+                </button>
+                <span className="text-xs font-mono px-3 py-1.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 rounded-md font-bold">Colaborador: {currentUser.usuario}</span>
+              </div>
+            </header>
+
+            <main className="flex-1 px-4 md:px-8 py-6 overflow-y-auto animate-fade-in">
+              {/* DASHBOARD */}
+              {activeTab === 'dashboard' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="glass-card p-5 rounded-2xl flex items-center justify-between shadow-md">
+                      <div><span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Atribuído</span><span className="text-3xl font-extrabold text-indigo-400 block mt-1">{stats.total}</span></div>
+                      <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400"><i data-lucide="list" className="w-6 h-6"></i></div>
+                    </div>
+                    <div className="glass-card p-5 rounded-2xl flex items-center justify-between shadow-md">
+                      <div><span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Pendentes</span><span className="text-3xl font-extrabold text-amber-400 block mt-1">{stats.pendentes}</span></div>
+                      <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 animate-pulse"><i data-lucide="clock" className="w-6 h-6"></i></div>
+                    </div>
+                    <div className="glass-card p-5 rounded-2xl flex items-center justify-between shadow-md">
+                      <div><span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Concluídas</span><span className="text-3xl font-extrabold text-emerald-400 block mt-1">{stats.concluidas}</span></div>
+                      <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400"><i data-lucide="check-circle" className="w-6 h-6"></i></div>
+                    </div>
+                    <div className="glass-card p-5 rounded-2xl flex items-center justify-between shadow-md">
+                      <div><span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Vencidas</span><span className="text-3xl font-extrabold text-red-400 block mt-1">{stats.vencidas}</span></div>
+                      <div className="p-3 rounded-xl bg-red-500/10 text-red-400"><i data-lucide="alert-triangle" className="w-6 h-6"></i></div>
+                    </div>
+                  </div>
+
+                  {/* Progresso geral */}
+                  <div className="glass-card p-6 rounded-2xl shadow-md space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div><h3 className="text-sm font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">Progresso Geral Operacional</h3><p className="text-[10px] text-slate-400">Percentual de tarefas já finalizadas</p></div>
+                      <span className="text-lg font-extrabold font-mono text-indigo-400">{stats.progresso}%</span>
+                    </div>
+                    <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/5">
+                      <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500" style={{ width:`${stats.progresso}%` }}></div>
+                    </div>
+                  </div>
+
+                  {/* Drive space */}
+                  {driveSpaceInfo && !driveSpaceInfo.error && (
+                    <div className="glass-card p-6 rounded-2xl shadow-md space-y-3 border border-emerald-500/10">
+                      <div className="flex justify-between items-center">
+                        <div><h3 className="text-sm font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">📁 Espaço Utilizado no Drive</h3><p className="text-[10px] text-slate-400">Pasta ID: 14qKzJKm7mdKN2TrdqBb3HiqOrcxjsgY</p></div>
+                        <span className="text-lg font-extrabold font-mono text-emerald-400">{(driveSpaceInfo.folderSize/(1024*1024)).toFixed(2)} MB</span>
+                      </div>
+                      <div className="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/5">
+                        <div className="bg-gradient-to-r from-emerald-400 to-green-500 h-full rounded-full transition-all duration-500" style={{ width:`${Math.min(driveSpaceInfo.percent||0,100)}%` }}></div>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Usado: {(driveSpaceInfo.quotaUsed/(1024*1024*1024)).toFixed(2)} GB</span>
+                        <span>Total: {(driveSpaceInfo.quotaTotal/(1024*1024*1024)).toFixed(2)} GB</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status por colaborador e próximos vencimentos */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="glass-card p-6 rounded-2xl shadow-md space-y-4">
+                      <div><h3 className="text-sm font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">Status por Colaborador</h3><p className="text-xs text-slate-400">Distribuição quantitativa e progresso individual</p></div>
+                      <div className="space-y-4 divide-y divide-white/5">
+                        {Object.keys(stats.porExecutor).length===0 ? <p className="text-xs text-slate-500 text-center py-4">Nenhuma tarefa atribuída.</p> :
+                          Object.entries(stats.porExecutor).map(([name, est]) => {
+                            const pct = est.total>0 ? Math.round((est.concluidas/est.total)*100) : 0;
+                            return (
+                              <div key={name} className="pt-3 first:pt-0">
+                                <div className="flex justify-between items-center mb-1"><span className="text-xs font-bold text-slate-200">{name}</span><span className="text-[10px] text-slate-400 font-mono">{est.total} total</span></div>
+                                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
+                                  <div className="bg-emerald-500 h-full" style={{ width:`${(est.concluidas/est.total)*100}%` }}></div>
+                                  <div className="bg-amber-500 h-full" style={{ width:`${(est.pendentes/est.total)*100}%` }}></div>
+                                  <div className="bg-red-500 h-full" style={{ width:`${(est.vencidas/est.total)*100}%` }}></div>
+                                </div>
+                                <div className="flex gap-4 mt-1 text-[9px] text-slate-400 font-mono">
+                                  <span>{est.concluidas} Concluídas</span><span>{est.pendentes} Pendentes</span><span>{est.vencidas} Vencidas</span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        }
+                      </div>
+                    </div>
+                    <div className="glass-card p-6 rounded-2xl shadow-md space-y-4">
+                      <div><h3 className="text-sm font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">Próximos Vencimentos</h3><p className="text-xs text-slate-400">Próximas pendências com prazo limite próximo</p></div>
+                      <div className="space-y-3">
+                        {stats.proximas.length===0 ? <p className="text-xs text-slate-500 text-center py-8">Nenhuma tarefa pendente a vencer.</p> :
+                          stats.proximas.map(t => (
+                            <div key={t.id} className="p-3 rounded-xl bg-slate-900/60 dark:bg-slate-900/60 light:bg-slate-100 border border-white/5 flex items-center justify-between">
+                              <div className="overflow-hidden space-y-0.5">
+                                <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-indigo-500/15 text-indigo-400 font-bold">{t.id}</span><span className="text-xs font-bold text-slate-200 truncate">{t.tipoTarefa}</span></div>
+                                <p className="text-[11px] text-slate-400 truncate">{t.descricao}</p>
+                              </div>
+                              <div className="text-right shrink-0 ml-3"><span className="text-[10px] font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded font-semibold">{t.dataLimite}</span></div>
+                            </div>
+                          ))
+                        }
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAREFAS */}
+              {activeTab === 'tarefas' && (
+                <div className="space-y-6">
+                  <div className="glass-card p-5 rounded-2xl shadow-md space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div><h2 className="text-base font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">Painel Operacional de Tarefas</h2><p className="text-xs text-slate-400">Verifique, altere ou exclua os registros</p></div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={()=>setViewMode('cards')} className={`p-2 rounded-lg ${viewMode==='cards'?'bg-indigo-500/20 text-indigo-400':'text-slate-400'}`} title="Cards"><i data-lucide="grid" className="w-5 h-5"></i></button>
+                        <button onClick={()=>setViewMode('list')} className={`p-2 rounded-lg ${viewMode==='list'?'bg-indigo-500/20 text-indigo-400':'text-slate-400'}`} title="Lista"><i data-lucide="list" className="w-5 h-5"></i></button>
+                        {activePermissions.incluir && (
+                          <button onClick={()=>setShowAddModal(true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/15">
+                            <i data-lucide="plus-circle" className="w-4 h-4"></i><span>Nova Tarefa</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                      <input type="text" placeholder="Buscar por ID ou Tipo..." value={filtroBusca} onChange={(e)=>setFiltroBusca(e.target.value)} className="bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500" />
+                      <select value={filtroStatus} onChange={(e)=>setFiltroStatus(e.target.value)} className="bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        <option value="">Status (Todos)</option>
+                        <option value="Pendente">Pendente</option><option value="Concluída">Concluída</option><option value="Vencida">Vencida</option>
+                      </select>
+                      <select value={filtroTipo} onChange={(e)=>setFiltroTipo(e.target.value)} className="bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        <option value="">Tipo da Tarefa</option>
+                        {Array.from(new Set(tarefas.map(t=>t.tipoTarefa))).map(tipo=><option key={tipo} value={tipo}>{tipo}</option>)}
+                      </select>
+                      <select value={filtroLoja} onChange={(e)=>setFiltroLoja(e.target.value)} className="bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        <option value="">Lojas (Todas)</option>
+                        {Array.from(new Set(tarefas.map(t=>t.nomeLoja))).map(loja=><option key={loja} value={loja}>{loja}</option>)}
+                      </select>
+                      <select value={filtroExecutor} onChange={(e)=>setFiltroExecutor(e.target.value)} className="bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                        <option value="">Executor (Todos)</option>
+                        {executoresDisponiveis.map(exec=><option key={exec} value={exec}>{exec}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {tarefasFiltradas.length===0 ? (
+                    <div className="glass-card rounded-2xl p-12 text-center shadow-md"><i data-lucide="inbox" className="w-12 h-12 mx-auto text-slate-500 mb-3"></i><p className="text-xs text-slate-400">Nenhuma designação localizada.</p></div>
+                  ) : (
+                    viewMode==='cards' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {tarefasFiltradas.map(t => {
+                          let statusColor = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                          if (t.status==='Concluída') statusColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                          if (t.status==='Vencida') statusColor = "bg-red-500/10 text-red-400 border-red-500/20";
+                          return (
+                            <div key={t.id} className="glass-card p-5 rounded-2xl flex flex-col justify-between space-y-4 hover:border-indigo-500/20 transition-all shadow-md">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-mono text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded">{t.id}</span>
+                                  <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded uppercase border ${statusColor}`}>{t.status}</span>
+                                </div>
+                                <h3 className="text-sm font-bold truncate text-slate-100 dark:text-slate-100 light:text-slate-950">{t.tipoTarefa}</h3>
+                                <div className="space-y-0.5 text-[11px] text-slate-300">
+                                  <div className="flex items-center gap-1.5"><i data-lucide="store" className="w-3.5 h-3.5 text-indigo-400"></i><span className="font-semibold">{t.nomeLoja}</span></div>
+                                  <div className="flex items-center gap-1.5"><i data-lucide="user" className="w-3.5 h-3.5 text-slate-400"></i><span>{t.executor}</span></div>
+                                  <div className="flex items-center gap-1.5"><i data-lucide="calendar" className="w-3.5 h-3.5 text-slate-400"></i><span>Prazo: {t.dataLimite}</span></div>
+                                </div>
+                                <p className="text-xs text-slate-400 dark:text-slate-400 light:text-slate-600 line-clamp-2 min-h-[2.5rem]">{t.descricao}</p>
+                              </div>
+                              <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                                <button onClick={()=>{setSelectedTask(t); setObservacaoExecucao(t.observacao||''); setFotoExecucaoPreview(t.fotoExecucao||''); setShowViewModal(true);}} className="px-3 py-1.5 bg-slate-800 dark:bg-slate-800 light:bg-slate-200 text-slate-300 dark:text-slate-300 light:text-slate-800 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                                  <i data-lucide="eye" className="w-3.5 h-3.5"></i> Detalhes
+                                </button>
+                                <div className="flex items-center gap-1">
+                                  {t.status!=='Concluída' && <button onClick={()=>handleAlterarStatus(t.id,'Concluída')} className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500/25" title="Concluir"><i data-lucide="check" className="w-3.5 h-3.5"></i></button>}
+                                  {activePermissions.excluir && <button onClick={()=>handleDeletarTarefa(t.id)} className="p-1.5 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/25" title="Excluir"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="glass-card rounded-2xl overflow-hidden shadow-md">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs text-slate-300">
+                            <thead className="bg-slate-900/80 dark:bg-slate-900/80 light:bg-slate-100 text-[10px] font-mono uppercase text-slate-400 border-b border-white/5">
+                              <tr><th className="p-3">ID</th><th className="p-3">Tipo</th><th className="p-3">Executor</th><th className="p-3">Loja</th><th className="p-3">Prazo</th><th className="p-3">Status</th><th className="p-3 text-right">Ações</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                              {tarefasFiltradas.map(t => (
+                                <tr key={t.id} className="hover:bg-white/[0.02] transition-colors">
+                                  <td className="p-3 font-mono font-bold text-indigo-400">{t.id}</td>
+                                  <td className="p-3 font-semibold text-slate-100 dark:text-slate-100 light:text-slate-900">{t.tipoTarefa}</td>
+                                  <td className="p-3 text-slate-400">{t.executor}</td>
+                                  <td className="p-3 text-slate-400">{t.nomeLoja}</td>
+                                  <td className="p-3 font-mono">{t.dataLimite}</td>
+                                  <td className="p-3"><span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border ${t.status==='Concluída'?'bg-emerald-500/10 text-emerald-400 border-emerald-500/20':t.status==='Vencida'?'bg-red-500/10 text-red-400 border-red-500/20':'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{t.status}</span></td>
+                                  <td className="p-3 text-right">
+                                    <button onClick={()=>{setSelectedTask(t); setObservacaoExecucao(t.observacao||''); setFotoExecucaoPreview(t.fotoExecucao||''); setShowViewModal(true);}} className="px-2 py-1 bg-slate-800 text-slate-300 rounded text-[9px] font-bold"><i data-lucide="eye" className="w-3.5 h-3.5 inline"></i></button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* RELATÓRIOS */}
+              {activeTab === 'relatorios' && (
+                <div className="space-y-6">
+                  <div className="glass-card p-6 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-md">
+                    <div><h2 className="text-base font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">Relatório Consolidado de Desempenho</h2><p className="text-xs text-slate-400">Verifique os indicadores operacionais</p></div>
+                    <div className="flex flex-wrap gap-2">
+                      {activePermissions.exportar && (
+                        <>
+                          <button onClick={handleExportCsv} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/15"><i data-lucide="download" className="w-4 h-4"></i>CSV</button>
+                          <button onClick={handleExportPdf} className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-red-600/15"><i data-lucide="file-pdf" className="w-4 h-4"></i>PDF</button>
+                          <button onClick={handleExportExcel} className="px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-green-600/15"><i data-lucide="file-spreadsheet" className="w-4 h-4"></i>Excel</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="glass-card p-5 rounded-2xl shadow-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Data Início</label><input type="date" value={filtroDataInicio} onChange={(e)=>setFiltroDataInicio(e.target.value)} className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" /></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Data Fim</label><input type="date" value={filtroDataFim} onChange={(e)=>setFiltroDataFim(e.target.value)} className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" /></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Executor</label><select value={filtroExecutorRel} onChange={(e)=>setFiltroExecutorRel(e.target.value)} className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"><option value="">Todos</option>{executoresDisponiveis.map(exec=><option key={exec} value={exec}>{exec}</option>)}</select></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Loja</label><select value={filtroLojaRel} onChange={(e)=>setFiltroLojaRel(e.target.value)} className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"><option value="">Todas</option>{Array.from(new Set(tarefas.map(t=>t.nomeLoja))).map(loja=><option key={loja} value={loja}>{loja}</option>)}</select></div>
+                  </div>
+
+                  <div id="relatorio-table-container" className="glass-card p-6 rounded-2xl shadow-md space-y-4">
+                    <h3 className="text-xs font-bold font-mono text-indigo-400 uppercase tracking-wider">Histórico de Atribuições</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-900/80 dark:bg-slate-900/80 light:bg-slate-100 text-[10px] font-mono uppercase text-slate-400 border-b border-white/5">
+                          <tr><th className="p-3">ID</th><th className="p-3">Tipo</th><th className="p-3">Executor</th><th className="p-3">Loja</th><th className="p-3">Limite</th><th className="p-3 text-right">Status</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {tarefasRelFiltradas.map(t => (
+                            <tr key={t.id} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="p-3 font-mono font-bold text-indigo-400">{t.id}</td>
+                              <td className="p-3 font-semibold text-slate-100 dark:text-slate-100 light:text-slate-900">{t.tipoTarefa}</td>
+                              <td className="p-3 text-slate-400">{t.executor}</td>
+                              <td className="p-3 text-slate-400">{t.nomeLoja}</td>
+                              <td className="p-3 font-mono">{formatDateDDMMYYYY(t.dataLimite)}</td>
+                              <td className="p-3 text-right"><span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border ${t.status==='Concluída'?'bg-emerald-500/10 text-emerald-400 border-emerald-500/20':t.status==='Vencida'?'bg-red-500/10 text-red-400 border-red-500/20':'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{t.status}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ACESSOS */}
+              {activeTab === 'acessos' && (
+                <div className="space-y-6">
+                  <div className="glass-card p-6 rounded-2xl shadow-md space-y-4">
+                    <div><h2 className="text-base font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">Cadastrar Novo Colaborador</h2><p className="text-xs text-slate-400">Grave credenciais e perfis de permissão</p></div>
+                    <form onSubmit={handleAdicionarAcesso} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Nome Completo</label><input type="text" required value={novoAcesso.nome} onChange={(e)=>setNovoAcesso({...novoAcesso, nome:e.target.value})} placeholder="Ex: Carlos Silva" className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" /></div>
+                      <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Usuário / Login</label><input type="text" required value={novoAcesso.usuario} onChange={(e)=>setNovoAcesso({...novoAcesso, usuario:e.target.value})} placeholder="Ex: carlossilva" className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500" /></div>
+                      <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Senha Provisória</label><input type="text" required value={novoAcesso.senha} onChange={(e)=>setNovoAcesso({...novoAcesso, senha:e.target.value})} placeholder="Ex: 12345" className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" /></div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Perfil de Acesso</label>
+                        <select 
+                          value={novoAcesso.perfil} 
+                          onChange={(e)=>setNovoAcesso({...novoAcesso, perfil:e.target.value})} 
+                          className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                        >
+                          {permissoes.length === 0 ? (
+                            <option value="">Carregando perfis...</option>
+                          ) : (
+                            [...new Set(permissoes.map(p => p.perfil))].map(perfil => (
+                              <option key={perfil} value={perfil}>{perfil}</option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+                      <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Nome da Loja</label><select required value={novoAcesso.loja} onChange={(e)=>setNovoAcesso({...novoAcesso, loja:e.target.value})} className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">{lojasDisponiveis.length===0?<option value="">Nenhuma loja cadastrada</option>:lojasDisponiveis.map(loja=><option key={loja} value={loja}>{loja}</option>)}</select></div>
+                      <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">E-mail Corporativo</label><input type="email" value={novoAcesso.email} onChange={(e)=>setNovoAcesso({...novoAcesso, email:e.target.value})} placeholder="Ex: carlos@loja.com" className="w-full bg-slate-900/80 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" /></div>
+                      <div className="sm:col-span-2 lg:col-span-3 pt-2 text-right"><button type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-indigo-600/15 cursor-pointer">Gravar Colaborador</button></div>
+                    </form>
+                  </div>
+
+                  <div className="glass-card p-6 rounded-2xl shadow-md space-y-4">
+                    <h3 className="text-xs font-bold font-mono text-indigo-400 uppercase tracking-wider">Colaboradores Cadastrados</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-900/80 dark:bg-slate-900/80 light:bg-slate-100 text-[10px] font-mono uppercase text-slate-400 border-b border-white/5">
+                          <tr><th className="p-3">Nome</th><th className="p-3">Usuário</th><th className="p-3">Perfil</th><th className="p-3">Unidade</th><th className="p-3 text-right">Status</th><th className="p-3 text-right">Ações</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {acessos.map(ac => (
+                            <tr key={ac.id} className="hover:bg-white/[0.01] transition-colors">
+                              <td className="p-3 font-semibold text-slate-100 dark:text-slate-100 light:text-slate-900">{ac.nome}</td>
+                              <td className="p-3 font-mono text-slate-400">{ac.usuario}</td>
+                              <td className="p-3"><span className="text-[11px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 border border-indigo-500/15 rounded">{ac.perfil}</span></td>
+                              <td className="p-3 text-slate-400">{ac.loja}</td>
+                              <td className="p-3 text-right"><span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">{ac.status}</span></td>
+                              <td className="p-3 text-right">
+                                <button 
+                                  onClick={() => { setEditAcesso(ac); setShowEditModal(true); }} 
+                                  className="px-2 py-1 bg-indigo-500/10 text-indigo-400 rounded text-[9px] font-bold hover:bg-indigo-500/20 mr-1"
+                                >
+                                  <i data-lucide="edit" className="w-3.5 h-3.5 inline"></i>
+                                </button>
+                                <button 
+                                  onClick={() => handleExcluirAcesso(ac.id)} 
+                                  className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px] font-bold hover:bg-red-500/20"
+                                >
+                                  <i data-lucide="trash-2" className="w-3.5 h-3.5 inline"></i>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </main>
+
+            <footer className="px-6 md:px-8 py-4 bg-black/20 border-t border-white/5">
+              <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-500 font-mono gap-2">
+                <div>Nível de Permissão: <span className="text-indigo-400 font-semibold">{currentUser.perfil}</span> (Leitura: SIM • Incluir: {activePermissions.incluir?'SIM':'NÃO'} • Excluir: {activePermissions.excluir?'SIM':'NÃO'})</div>
+                <div>SGT v2.1 • © 2026 Apps Script Web Application</div>
+              </div>
+            </footer>
+          </div>
+
+          {/* Modal Nova Tarefa */}
+          {showAddModal && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="w-full max-w-2xl glass-card rounded-2xl p-6 border border-white/10 shadow-2xl relative my-8">
+                <button onClick={()=>setShowAddModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><i data-lucide="x" className="w-5 h-5"></i></button>
+                <div className="mb-6"><h3 className="text-base font-bold">Cadastrar Nova Tarefa</h3><p className="text-xs text-slate-400">Insira as informações de designação operacional</p></div>
+                <form onSubmit={handleSaveTarefa} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Tipo da Tarefa</label><input type="text" required value={novaTarefa.tipoTarefa} onChange={(e)=>setNovaTarefa({...novaTarefa, tipoTarefa:e.target.value})} placeholder="Ex: Inventário, Limpeza" className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Executor Designado</label><select required value={novaTarefa.executor} onChange={(e)=>setNovaTarefa({...novaTarefa, executor:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"><option value="">Selecione</option>{acessos.map(ac=><option key={ac.id} value={ac.usuario}>{ac.usuario}</option>)}</select></div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Loja Relacionada</label><select required value={novaTarefa.nomeLoja} onChange={(e)=>setNovaTarefa({...novaTarefa, nomeLoja:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"><option value="">Selecione</option>{lojasDisponiveis.map(loja=><option key={loja} value={loja}>{loja}</option>)}</select></div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Data Limite</label><input type="date" required value={novaTarefa.dataLimite} onChange={(e)=>setNovaTarefa({...novaTarefa, dataLimite:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500 font-mono" /></div>
+                  </div>
+                  <div className="space-y-1"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Descrição</label><textarea rows="3" required value={novaTarefa.descricao} onChange={(e)=>setNovaTarefa({...novaTarefa, descricao:e.target.value})} placeholder="Descreva em detalhes..." className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"></textarea></div>
+                  <div className="space-y-2"><label className="text-[10px] font-bold text-slate-300 font-mono uppercase block">Foto Comprovante</label><input type="file" accept="image/*" onChange={handleFotoChange} className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/25" />{novaTarefa.foto && <div className="w-24 h-16 rounded border border-white/5 overflow-hidden mt-1.5 bg-slate-900"><img src={novaTarefa.foto} className="w-full h-full object-cover" /></div>}</div>
+                  <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                    <button type="button" onClick={()=>setShowAddModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer">Cancelar</button>
+                    <button type="submit" disabled={loadingSalvar} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/15 cursor-pointer">{loadingSalvar?"Gravando...":"Confirmar Gravação"}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Detalhes da Tarefa */}
+          {showViewModal && selectedTask && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="w-full max-w-2xl glass-card rounded-2xl p-6 border border-white/10 shadow-2xl relative my-8">
+                <button onClick={()=>setShowViewModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><i data-lucide="x" className="w-5 h-5"></i></button>
+                <div className="mb-4"><span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded">{selectedTask.id}</span><h3 className="text-base font-bold text-slate-100 dark:text-slate-100 light:text-slate-950 mt-2">{selectedTask.tipoTarefa}</h3></div>
+                <div className="space-y-4">
+                  <div className="p-3 bg-slate-900/60 dark:bg-slate-900/60 light:bg-slate-100 rounded-xl border border-white/5 space-y-2"><p className="text-xs text-slate-300 dark:text-slate-300 light:text-slate-700 leading-relaxed">{selectedTask.descricao}</p></div>
+                  <div className="grid grid-cols-2 gap-4 text-xs font-mono text-slate-400 dark:text-slate-400 light:text-slate-600 border-t border-white/5 pt-3">
+                    <div><span className="text-[10px] font-bold uppercase text-slate-500 block">Executor</span><strong className="text-slate-200 dark:text-slate-200 light:text-slate-800 font-semibold">{selectedTask.executor}</strong></div>
+                    <div><span className="text-[10px] font-bold uppercase text-slate-500 block">Unidade</span><strong className="text-slate-200 dark:text-slate-200 light:text-slate-800 font-semibold">{selectedTask.nomeLoja}</strong></div>
+                    <div><span className="text-[10px] font-bold uppercase text-slate-500 block">Data Limite</span><strong className="text-slate-200 dark:text-slate-200 light:text-slate-800 font-semibold">{selectedTask.dataLimite}</strong></div>
+                    <div><span className="text-[10px] font-bold uppercase text-slate-500 block">Status</span><strong className="text-indigo-400 font-bold">{selectedTask.status}</strong></div>
+                  </div>
+                  {selectedTask.foto && (
+                    <div className="space-y-1"><span className="text-[10px] font-mono font-bold uppercase text-slate-500">Comprovante Inicial</span><div className="w-full h-40 rounded-xl border border-white/5 overflow-hidden bg-slate-900">{selectedTask.foto.startsWith("http")?<a href={selectedTask.foto} target="_blank" rel="noopener noreferrer" className="relative group block w-full h-full"><img src={selectedTask.foto} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-xs font-bold text-white flex items-center gap-1"><i data-lucide="external-link" className="w-4 h-4"></i>Ver no Drive</span></div></a>:<img src={selectedTask.foto} className="w-full h-full object-cover" />}</div></div>
+                  )}
+                  <div className="border-t border-white/5 pt-4 space-y-3">
+                    <h4 className="text-xs font-bold text-indigo-400 font-mono uppercase">Execução da Tarefa</h4>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase block mb-1">Observação da Execução</label><textarea rows="3" value={observacaoExecucao} onChange={(e)=>setObservacaoExecucao(e.target.value)} placeholder="Descreva como foi executada..." className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"></textarea></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase block mb-1">Foto de Execução</label><input type="file" accept="image/*" onChange={async (e)=>{const file=e.target.files[0]; if(file){setFotoExecucaoFile(file); const compressed=await compressImage(file,400,0.6); setFotoExecucaoPreview(compressed);}}} className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/25" />{fotoExecucaoPreview && <div className="mt-2 w-32 h-24 rounded border border-white/5 overflow-hidden bg-slate-900"><img src={fotoExecucaoPreview} className="w-full h-full object-cover" /></div>}{selectedTask.fotoExecucao && !fotoExecucaoPreview && <div className="mt-2 w-32 h-24 rounded border border-white/5 overflow-hidden bg-slate-900"><img src={selectedTask.fotoExecucao} className="w-full h-full object-cover" /></div>}</div>
+                    <div className="flex justify-end"><button onClick={handleAtualizarExecucao} disabled={loadingAtualizacao} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer disabled:opacity-50"><i data-lucide="save" className="w-4 h-4"></i>{loadingAtualizacao?"Salvando...":"Salvar Observação e Foto"}</button></div>
+                  </div>
+                  <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                    {selectedTask.status!=='Concluída' ? <button onClick={()=>{handleAlterarStatus(selectedTask.id,'Concluída'); setShowViewModal(false);}} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer"><i data-lucide="check" className="w-4 h-4"></i><span>Marcar como Concluída</span></button> : <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 font-mono"><i data-lucide="check-circle" className="w-4 h-4"></i>Tarefa Finalizada</span>}
+                    <button onClick={()=>setShowViewModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer">Fechar</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Editar Colaborador */}
+          {showEditModal && editAcesso && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="w-full max-w-2xl glass-card rounded-2xl p-6 border border-white/10 shadow-2xl relative my-8">
+                <button onClick={()=>setShowEditModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><i data-lucide="x" className="w-5 h-5"></i></button>
+                <div className="mb-6"><h3 className="text-base font-bold">Editar Colaborador</h3><p className="text-xs text-slate-400">Atualize as informações de acesso</p></div>
+                <form onSubmit={handleEditarAcesso} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Nome</label><input type="text" required value={editAcesso.nome} onChange={(e)=>setEditAcesso({...editAcesso, nome:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" /></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Usuário</label><input type="text" required value={editAcesso.usuario} onChange={(e)=>setEditAcesso({...editAcesso, usuario:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" /></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Senha</label><input type="text" required value={editAcesso.senha} onChange={(e)=>setEditAcesso({...editAcesso, senha:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" /></div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Perfil</label>
+                      <select value={editAcesso.perfil} onChange={(e)=>setEditAcesso({...editAcesso, perfil:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+                        {[...new Set(permissoes.map(p => p.perfil))].map(perfil => (
+                          <option key={perfil} value={perfil}>{perfil}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Loja</label>
+                      <select value={editAcesso.loja} onChange={(e)=>setEditAcesso({...editAcesso, loja:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+                        {lojasDisponiveis.map(loja => <option key={loja} value={loja}>{loja}</option>)}
+                      </select>
+                    </div>
+                    <div><label className="text-[10px] font-bold text-slate-300 font-mono uppercase">Status</label>
+                      <select value={editAcesso.status} onChange={(e)=>setEditAcesso({...editAcesso, status:e.target.value})} className="w-full bg-slate-900 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+                        <option value="Ativo">Ativo</option>
+                        <option value="Inativo">Inativo</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                    <button type="button" onClick={()=>setShowEditModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer">Cancelar</button>
+                    <button type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/15 cursor-pointer">Salvar Alterações</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const rootElement = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(<App />);
+  </script>
 </body>
 </html>
