@@ -1,0 +1,50 @@
+<!-- ===== SCANNER ===== -->
+<section class="page-section" id="pageScanner">
+<h2 class="page-title"><i class="fas fa-barcode"></i> Scanner de Código de Barras</h2>
+<div class="card">
+<div class="card-body">
+<div style="text-align:center; margin-bottom:20px;">
+<input type="file" id="fileInputScanner" accept="image/*" capture="environment" style="display:none;">
+<button class="btn btn-primary" id="btnAbrirCamera" style="width:100%; margin-bottom:12px;">
+<i class="fas fa-camera"></i> Abrir Câmera e Tirar Foto
+</button>
+<div id="scanStatusScanner" class="scan-status"></div>
+<div id="previewContainerScanner" style="display:none; margin-top:12px;">
+<img id="previewImgScanner" class="scanner-preview-img" src="" alt="Preview">
+<button class="btn btn-primary" id="btnConfirmarScan" style="width:100%; margin-top:10px;"><i class="fas fa-check"></i> Confirmar e Pesquisar</button>
+<button class="btn btn-secondary" id="btnCancelarScan" style="width:100%; margin-top:8px;"><i class="fas fa-times"></i> Cancelar / Tirar Outra</button>
+</div>
+</div>
+<div style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px;">
+<h3 style="font-size:1rem; color:var(--text-secondary); margin-bottom:12px;"><i class="fas fa-keyboard"></i> Inserir Manualmente</h3>
+<div style="display:flex; gap:10px;">
+<input type="text" id="codigoInputScanner" class="form-input" placeholder="Digite ou bipe o código aqui" style="flex:1;">
+<button class="btn btn-primary" id="btnPesquisarManual" style="width:auto;"><i class="fas fa-search"></i> Pesquisar</button>
+</div>
+</div>
+<div id="resultadoBoxScanner" class="scan-result-box">
+<strong>Resultado do Scanner:</strong>
+<div id="resConteudoScanner" style="margin-top:8px;"></div>
+<div id="acoesScanner" style="margin-top:12px; display:none;">
+<button class="btn btn-add" id="btnCadastrarEstoque" style="width:100%;">
+<i class="fas fa-plus-circle"></i> Cadastrar no Estoque
+</button>
+</div>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:20px;">
+<div class="card-header">
+<span class="card-title"><i class="fas fa-history"></i> Últimas 10 Pesquisas</span>
+<button class="btn-sm btn-atualizar" id="btnAtualizarHistorico">🔄 Atualizar</button>
+</div>
+<div class="card-body" style="padding:0;">
+<div class="table-responsive">
+<table class="data-table" id="tabelaHistoricoScanner">
+<thead><tr><th>Data/Hora</th><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Data Validade</th></tr></thead>
+<tbody id="tbodyHistoricoScanner"><tr><td colspan="5" class="empty-state">Carregando histórico...</td></tr></tbody>
+</table>
+</div>
+</div>
+</div>
+</section>
