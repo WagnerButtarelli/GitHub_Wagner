@@ -1,0 +1,490 @@
+<script>
+(function(){
+'use strict';
+
+// Esconder loading IMEDIATAMENTE
+try {
+  document.getElementById('loadingOverlay').classList.add('hidden');
+} catch(e) {
+  console.error('Erro ao esconder loading:', e);
+}
+
+var usuarioLogado=null,produtosCache=[],dashboardCache=null,charts={};
+var cadastroTipo='',cadastroModo='create',cadastroEditandoOld='';
+var categoriasCache=[],subcategoriasCache=[],estabelecimentosCache=[],fornecedoresCache=[];
+var scannerTarget=null,imagemCapturadaScanner=null,html5QrCodeScanner=null;
+var ultimoCodigoScanner='',ultimoNomeScanner='',linhaExcluir=null;
+
+function showLoading(t){document.getElementById('loadingOverlay').querySelector('.loading-text').textContent=t||'Carregando...';document.getElementById('loadingOverlay').classList.remove('hidden');}
+function hideLoading(){try{document.getElementById('loadingOverlay').classList.add('hidden');}catch(e){}}
+function showToast(m,tipo){var c=document.getElementById('toastContainer'),d=document.createElement('div');d.className='toast toast-'+tipo;var ic=tipo==='success'?'fa-check-circle':tipo==='error'?'fa-times-circle':tipo==='warning'?'fa-exclamation-triangle':'fa-info-circle';d.innerHTML='<i class="fas '+ic+'"></i> '+m;c.appendChild(d);setTimeout(function(){d.style.opacity='0';setTimeout(function(){d.remove();},300);},3000);}
+function formatarData(s){if(!s)return'-';var d=new Date(s+'T00:00:00');return d.toLocaleDateString('pt-BR');}
+function formatarMoeda(v){if(!v)return'R$ 0,00';return'R$ '+parseFloat(v).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function escapeHtml(t){if(!t)return'';var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
+function getStatusLabel(s){
+var m={'vencido':'<span class="badge badge-vencido"><i class="fas fa-times-circle"></i> Vencido</span>','supercritico':'<span class="badge badge-supercritico"><i class="fas fa-radiation-alt"></i> Supercrítico</span>','critico':'<span class="badge badge-critico"><i class="fas fa-exclamation-circle"></i> Crítico</span>','alerta':'<span class="badge badge-alerta"><i class="fas fa-exclamation-triangle"></i> Alerta</span>','seguro':'<span class="badge badge-seguro"><i class="fas fa-check-circle"></i> Seguro</span>'};
+return m[s]||s;
+}
+
+// PERMISSÕES
+function aplicarPermissoes(perfil){
+google.script.run.withSuccessHandler(function(p){
+usuarioLogado.permissoes=p;
+var secoes=['Dashboard','Estoque','Relatorios','Scanner','Configuracoes'];
+var ids={'Dashboard':'pageDashboard','Estoque':'pageEstoque','Relatorios':'pageRelatorios','Scanner':'pageScanner','Configuracoes':'pageConfiguracoes'};
+secoes.forEach(function(s){
+var nav=document.querySelector('.nav-item[data-page="'+s.toLowerCase()+'"]'),pg=document.getElementById(ids[s]);
+if(nav){p[s].permitido?nav.classList.remove('no-access'):nav.classList.add('no-access');}
+if(pg){if(!p[s].permitido)pg.classList.add('no-access');else pg.classList.remove('no-access');}
+});
+var tbody=document.getElementById('tbodyPermissoes');
+if(tbody){tbody.innerHTML=secoes.map(function(s){return'<tr><td><strong>'+s+'</strong></td><td>'+p[s].nivel+'</td></tr>';}).join('');}
+}).getPermissoesUsuario(perfil);
+}
+function verificarAcao(acao,secao){
+if(!usuarioLogado||!usuarioLogado.permissoes)return false;
+var p=usuarioLogado.permissoes[secao];
+if(!p||!p.permitido){showToast('Acesso negado.','error');return false;}
+if(acao==='delete'&&p.nivel!=='FULL'){showToast('Somente Gerentes excluem.','warning');return false;}
+if((acao==='create'||acao==='update')&&p.nivel==='VIEW'){showToast('Apenas visualização.','warning');return false;}
+return true;
+}
+
+// LOGIN
+document.getElementById('loginForm').addEventListener('submit',function(e){
+e.preventDefault();
+var u=document.getElementById('loginUsuario').value.trim(),s=document.getElementById('loginSenha').value.trim();
+if(!u||!s){showToast('Preencha os campos!','error');return;}
+showLoading('Autenticando...');
+google.script.run.withSuccessHandler(function(r){
+hideLoading();
+if(r.sucesso){
+usuarioLogado=r.usuario;
+document.getElementById('loginContainer').style.display='none';
+document.getElementById('appContainer').classList.add('active');
+document.getElementById('userName').textContent=r.usuario.nome;
+document.getElementById('userRole').textContent=r.usuario.perfil;
+showToast('Bem-vindo!','success');
+aplicarPermissoes(r.usuario.perfil);
+setTimeout(function(){carregarDashboard();carregarDadosAuxiliares();carregarProdutos();},500);
+}else showToast(r.mensagem,'error');
+}).autenticarUsuario(u,s);
+});
+document.getElementById('btnLogout').addEventListener('click',function(){location.reload();});
+
+// NAVEGAÇÃO
+document.querySelectorAll('.nav-item').forEach(function(item){
+item.addEventListener('click',function(){
+if(this.classList.contains('no-access'))return;
+var pg=this.getAttribute('data-page');
+document.querySelectorAll('.page-section').forEach(function(s){s.classList.remove('active');});
+document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+document.getElementById('page'+pg.charAt(0).toUpperCase()+pg.slice(1)).classList.add('active');
+this.classList.add('active');
+if(pg==='dashboard')carregarDashboard();
+if(pg==='estoque'){carregarDadosAuxiliares();carregarProdutos();}
+});
+});
+
+// DADOS AUXILIARES
+function carregarDadosAuxiliares(){carregarCategorias();carregarSubcategorias();carregarEstabelecimentos();carregarFornecedores();}
+function carregarCategorias(){google.script.run.withSuccessHandler(function(r){if(r.sucesso){categoriasCache=r.categorias;preencherSelectCategorias();}}).getCategorias();}
+function carregarSubcategorias(){google.script.run.withSuccessHandler(function(r){if(r.sucesso){subcategoriasCache=r.subcategorias;preencherSelectSubcategorias();}}).getSubcategorias();}
+function carregarEstabelecimentos(){google.script.run.withSuccessHandler(function(r){if(r.sucesso){estabelecimentosCache=r.estabelecimentos;preencherSelectEstabelecimentos();}}).getEstabelecimentos();}
+function carregarFornecedores(){google.script.run.withSuccessHandler(function(r){if(r.sucesso){fornecedoresCache=r.fornecedores;preencherSelectFornecedores();}}).getFornecedores();}
+
+function preencherSelectCategorias(){
+['filterCategoria','produtoCategoria','cadastroCategoria'].forEach(function(id){
+var el=document.getElementById(id);if(!el)return;
+var def=id==='produtoCategoria'||id==='cadastroCategoria'?'Selecione...':'Todas';
+var html='<option value="">'+def+'</option>';
+categoriasCache.forEach(function(c){html+='<option value="'+c+'">'+c+'</option>';});
+el.innerHTML=html;
+});
+}
+function preencherSelectSubcategorias(categoriaFiltro){
+['filterSubcategoria','produtoSubcategoria'].forEach(function(id){
+var el=document.getElementById(id);if(!el)return;
+var def=id==='produtoSubcategoria'?'Selecione...':'Todas';
+var html='<option value="">'+def+'</option>';
+var lista=subcategoriasCache;
+if(categoriaFiltro)lista=lista.filter(function(i){return i.categoria===categoriaFiltro;});
+lista.sort(function(a,b){return a.subcategoria.localeCompare(b.subcategoria,'pt-BR');});
+lista.forEach(function(i){html+='<option value="'+i.subcategoria+'">'+i.subcategoria+'</option>';});
+el.innerHTML=html;
+});
+}
+function preencherSelectEstabelecimentos(){
+['filterEstabelecimento','produtoEstabelecimento'].forEach(function(id){
+var el=document.getElementById(id);if(!el)return;
+var def=id==='produtoEstabelecimento'?'Selecione...':'Todos';
+var html='<option value="">'+def+'</option>';
+estabelecimentosCache.forEach(function(e){html+='<option value="'+e+'">'+e+'</option>';});
+el.innerHTML=html;
+});
+}
+function preencherSelectFornecedores(){
+['filterFornecedor','produtoFornecedor'].forEach(function(id){
+var el=document.getElementById(id);if(!el)return;
+var def=id==='produtoFornecedor'?'Selecione...':'Todos';
+var html='<option value="">'+def+'</option>';
+fornecedoresCache.forEach(function(f){html+='<option value="'+f+'">'+f+'</option>';});
+el.innerHTML=html;
+});
+}
+function preencherSelectProdutos(){
+var sel=document.getElementById('filterProduto'),us=[],seen={};
+produtosCache.forEach(function(p){if(p.produto&&!seen[p.produto]){seen[p.produto]=true;us.push(p.produto);}});
+us.sort(function(a,b){return a.localeCompare(b,'pt-BR');});
+var html='<option value="">Todos</option>';
+us.forEach(function(p){html+='<option value="'+p+'">'+p+'</option>';});
+sel.innerHTML=html;
+}
+
+document.getElementById('filterCategoria').addEventListener('change',function(){preencherSelectSubcategorias(this.value);filtrarProdutos();});
+document.getElementById('produtoCategoria').addEventListener('change',function(){
+var sel=document.getElementById('produtoSubcategoria');
+var html='<option value="">Selecione...</option>';
+subcategoriasCache.filter(function(i){return i.categoria===this.value;}.bind(this)).forEach(function(i){html+='<option value="'+i.subcategoria+'">'+i.subcategoria+'</option>';});
+sel.innerHTML=html;
+});
+
+// CADASTRO AUXILIAR
+function abrirModalCadastro(tipo){
+if(!verificarAcao('create','Estoque'))return;
+cadastroTipo=tipo;cadastroModo='create';cadastroEditandoOld='';
+document.getElementById('cadastroEditandoOld').value='';
+var titulos={'categoria':'Categoria','subcategoria':'Subcategoria','estabelecimento':'Loja','fornecedor':'Fornecedor'};
+document.getElementById('modalCadastroTitle').textContent='Cadastro: '+titulos[tipo];
+document.getElementById('cadastroLabel').textContent='Nome';
+document.getElementById('cadastroInput').value='';
+document.getElementById('btnSalvarCadastroText').textContent='Cadastrar';
+var catGroup=document.getElementById('cadastroCategoriaGroup');
+if(tipo==='subcategoria'){catGroup.style.display='block';preencherSelectCategorias();}
+else catGroup.style.display='none';
+renderizarListaCadastro();
+document.getElementById('modalCadastro').classList.add('active');
+}
+
+function renderizarListaCadastro(){
+  var listaContainer=document.getElementById('cadastroListaContainer');
+  var lista=document.getElementById('cadastroLista');
+  var listaTitulo=document.getElementById('cadastroListaTitulo');
+  var dados,tituloLista;
+  
+  if(tipo==='categoria'){
+    dados=categoriasCache.map(function(c){return{categoria:c};});
+    tituloLista='<i class="fas fa-tags"></i> Categorias Cadastradas';
+  }
+  else if(tipo==='subcategoria'){
+    dados=subcategoriasCache;
+    tituloLista='<i class="fas fa-tags"></i> Subcategorias Cadastradas';
+  }
+  else if(tipo==='estabelecimento'){
+    dados=estabelecimentosCache.map(function(e){return{estabelecimento:e};});
+    tituloLista='<i class="fas fa-store"></i> Estabelecimentos Cadastrados';
+  }
+  else if(tipo==='fornecedor'){
+    dados=fornecedoresCache.map(function(f){return{fornecedor:f};});
+    tituloLista='<i class="fas fa-truck"></i> Fornecedores Cadastrados';
+  }
+  
+  listaTitulo.innerHTML=tituloLista;
+  
+  if(dados&&dados.length>0){
+    listaContainer.style.display='block';
+    lista.innerHTML=dados.map(function(item){
+      var label='',excluirAttr='';
+      
+      if(tipo==='categoria'){
+        label=item.categoria;
+        excluirAttr='excluirCadastroItem("categoria","'+item.categoria.replace(/"/g,'\\"')+'")';
+      }
+      else if(tipo==='subcategoria'){
+        label=item.subcategoria+' ('+item.categoria+')';
+        excluirAttr='excluirCadastroItem("subcategoria","'+item.categoria.replace(/"/g,'\\"')+'","'+item.subcategoria.replace(/"/g,'\\"')+'")';
+      }
+      else if(tipo==='estabelecimento'){
+        label=item.estabelecimento;
+        excluirAttr='excluirCadastroItem("estabelecimento","'+item.estabelecimento.replace(/"/g,'\\"')+'")';
+      }
+      else if(tipo==='fornecedor'){
+        label=item.fornecedor;
+        excluirAttr='excluirCadastroItem("fornecedor","'+item.fornecedor.replace(/"/g,'\\"')+'")';
+      }
+      
+      var deleteBtn = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel === 'FULL' 
+        ? '<button class="btn-delete-item" onclick="'+excluirAttr+'" title="Excluir"><i class="fas fa-times"></i></button>' 
+        : '';
+      
+      return '<li><span>'+label+'</span>'+deleteBtn+'</li>';
+    }).join('');
+  } else {
+    listaContainer.style.display='none';
+  }
+  
+  document.getElementById('modalCadastro').classList.add('active');
+  setTimeout(function(){document.getElementById('cadastroInput').focus();},100);
+}
+
+window.iniciarEdicao=function(tipo,param1,param2){
+cadastroModo='edit';
+if(tipo==='subcategoria'){cadastroEditandoOld=param2;document.getElementById('cadastroCategoria').value=param1;document.getElementById('cadastroInput').value=param2;}
+else{cadastroEditandoOld=param1;document.getElementById('cadastroInput').value=param1;}
+document.getElementById('cadastroEditandoOld').value=cadastroEditandoOld;
+document.getElementById('btnSalvarCadastroText').textContent='Atualizar';
+document.getElementById('cadastroInput').focus();
+};
+
+window.excluirCadastro=function(tipo,p1,p2){
+if(!verificarAcao('delete','Estoque'))return;
+if(!confirm('Excluir?'))return;
+var fn,args;
+if(tipo==='categoria'){fn='excluirCategoria';args=[p1];}
+else if(tipo==='subcategoria'){fn='excluirSubcategoria';args=[p1,p2];}
+else if(tipo==='estabelecimento'){fn='excluirEstabelecimento';args=[p1];}
+else if(tipo==='fornecedor'){fn='excluirFornecedor';args=[p1];}
+showLoading('Excluindo...');
+google.script.run.withSuccessHandler(function(r){hideLoading();showToast(r.mensagem,'success');carregarDadosAuxiliares();setTimeout(renderizarListaCadastro,300);}).withFailureHandler(function(){hideLoading();})[fn].apply(null,args.concat([usuarioLogado.perfil]));
+};
+
+function fecharModalCadastro(){document.getElementById('modalCadastro').classList.remove('active');cadastroTipo='';cadastroModo='create';}
+
+function salvarCadastro(){
+if(!verificarAcao(cadastroModo==='edit'?'update':'create','Estoque'))return;
+var nome=document.getElementById('cadastroInput').value.trim();
+if(!nome){showToast('Digite um nome!','error');return;}
+if(cadastroModo==='edit'){
+var oldName=document.getElementById('cadastroEditandoOld').value;
+var fn;
+if(cadastroTipo==='categoria')fn='editarCategoria';
+else if(cadastroTipo==='subcategoria')fn='editarSubcategoria';
+else if(cadastroTipo==='estabelecimento')fn='editarEstabelecimento';
+else if(cadastroTipo==='fornecedor')fn='editarFornecedor';
+var args=[oldName,nome,usuarioLogado.perfil];
+if(cadastroTipo==='subcategoria')args=[document.getElementById('cadastroCategoria').value,oldName,nome,usuarioLogado.perfil];
+showLoading('Atualizando...');
+google.script.run.withSuccessHandler(function(r){hideLoading();showToast(r.mensagem,'success');carregarDadosAuxiliares();cadastroModo='create';document.getElementById('cadastroInput').value='';document.getElementById('btnSalvarCadastroText').textContent='Cadastrar';setTimeout(renderizarListaCadastro,300);})[fn].apply(null,args);
+}else{
+if(cadastroTipo==='subcategoria'){
+var cat=document.getElementById('cadastroCategoria').value;
+if(!cat){showToast('Selecione uma categoria!','error');return;}
+showLoading('Cadastrando...');
+google.script.run.withSuccessHandler(function(r){hideLoading();showToast(r.mensagem,'success');document.getElementById('cadastroInput').value='';carregarDadosAuxiliares();setTimeout(renderizarListaCadastro,300);}).salvarSubcategoria(cat,nome,usuarioLogado.perfil);
+}else{
+var fn={'categoria':'salvarCategoria','estabelecimento':'salvarEstabelecimento','fornecedor':'salvarFornecedor'}[cadastroTipo];
+showLoading('Cadastrando...');
+google.script.run.withSuccessHandler(function(r){hideLoading();showToast(r.mensagem,'success');document.getElementById('cadastroInput').value='';carregarDadosAuxiliares();setTimeout(renderizarListaCadastro,300);})[fn](nome,usuarioLogado.perfil);
+}
+}
+}
+
+// DASHBOARD
+function carregarDashboard(){
+showLoading('Carregando...');
+google.script.run.withSuccessHandler(function(r){hideLoading();if(r.sucesso){dashboardCache=r;renderizarDashboard(r);}}).getDashboardData();
+}
+function renderizarDashboard(data){
+var r=data.resumo;
+document.getElementById('statsGrid').innerHTML=
+'<div class="stat-card total"><div class="stat-icon"><i class="fas fa-boxes"></i></div><div class="stat-value">'+r.total+'</div><div class="stat-label">Total</div></div>'+
+'<div class="stat-card vencido"><div class="stat-icon"><i class="fas fa-times-circle"></i></div><div class="stat-value">'+r.vencidos+'</div><div class="stat-label">Vencidos</div></div>'+
+'<div class="stat-card supercritico"><div class="stat-icon"><i class="fas fa-radiation-alt"></i></div><div class="stat-value">'+r.supercritico+'</div><div class="stat-label">Supercrítico (≤3d)</div></div>'+
+'<div class="stat-card critico"><div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div><div class="stat-value">'+r.critico+'</div><div class="stat-label">Crítico (≤7d)</div></div>'+
+'<div class="stat-card alerta"><div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="stat-value">'+r.alerta+'</div><div class="stat-label">Alerta (≤30d)</div></div>'+
+'<div class="stat-card seguro"><div class="stat-icon"><i class="fas fa-check-circle"></i></div><div class="stat-value">'+r.seguro+'</div><div class="stat-label">Seguro</div></div>'+
+'<div class="stat-card perda"><div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div><div class="stat-value">'+formatarMoeda(r.valorPerda)+'</div><div class="stat-label">Perdas</div></div>';
+var ctx=document.getElementById('chartStatus').getContext('2d');
+if(charts.status)charts.status.destroy();
+charts.status=new Chart(ctx,{type:'doughnut',data:{labels:['Vencidos','Supercrítico','Crítico','Alerta','Seguro'],datasets:[{data:[r.vencidos,r.supercritico,r.critico,r.alerta,r.seguro],backgroundColor:['#ef4444','#f97316','#f59e0b','#fbbf24','#10b981'],borderColor:'#1a1a2e',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8892b0'}}}},cutout:'65%'}});
+var sc=document.getElementById('sugestoesContainer'),sug=[];
+if(r.vencidos>0)sug.push({icon:'fa-ban',t:'Descarte',d:r.vencidos+' vencido(s).'});
+if(r.supercritico>0)sug.push({icon:'fa-fire',t:'Promoção Imediata',d:r.supercritico+' supercrítico(s).'});
+if(r.critico>0)sug.push({icon:'fa-tags',t:'Promoção Urgente',d:r.critico+' crítico(s).'});
+if(r.alerta>0)sug.push({icon:'fa-percentage',t:'Desconto',d:r.alerta+' em alerta.'});
+sc.innerHTML=sug.length?sug.map(function(s){return'<div class="suggestion-card"><h4><i class="fas '+s.icon+'"></i> '+s.t+'</h4><p>'+s.d+'</p></div>';}).join(''):'<div class="empty-state"><i class="fas fa-thumbs-up" style="color:var(--accent-green);"></i><h3>Excelente!</h3></div>';
+}
+
+// ESTOQUE
+function carregarProdutos(){
+showLoading('Carregando...');
+google.script.run.withSuccessHandler(function(r){hideLoading();if(r.sucesso){produtosCache=r.produtos;preencherSelectProdutos();filtrarProdutos();}}).getProdutos();
+}
+function filtrarProdutos(){
+var f={produto:document.getElementById('filterProduto').value,categoria:document.getElementById('filterCategoria').value,subcategoria:document.getElementById('filterSubcategoria').value,estabelecimento:document.getElementById('filterEstabelecimento').value,fornecedor:document.getElementById('filterFornecedor').value,status:document.getElementById('filterStatus').value};
+var filtrados=produtosCache.filter(function(p){
+if(f.produto&&p.produto!==f.produto)return false;
+if(f.categoria&&p.categoria!==f.categoria)return false;
+if(f.subcategoria&&p.subcategoria!==f.subcategoria)return false;
+if(f.estabelecimento&&p.estabelecimento!==f.estabelecimento)return false;
+if(f.fornecedor&&p.fornecedor!==f.fornecedor)return false;
+if(f.status&&p.status!==f.status)return false;
+return true;
+});
+renderizarTabelaProdutos(filtrados);
+renderizarCardsMobile(filtrados);
+}
+function renderizarTabelaProdutos(produtos){
+var tbody=document.getElementById('tbodyProdutos'),empty=document.getElementById('emptyProdutos');
+if(produtos.length===0){tbody.innerHTML='';empty.style.display='block';return;}
+empty.style.display='none';
+var podeEditar=usuarioLogado.permissoes.Estoque.nivel!=='VIEW'&&usuarioLogado.permissoes.Estoque.nivel!=='NONE';
+var podeExcluir=usuarioLogado.permissoes.Estoque.nivel==='FULL';
+tbody.innerHTML=produtos.map(function(p){
+var qc=p.quebra==='Sim'?'quebra-sim':'';
+var acoes='';
+if(podeEditar)acoes+='<button class="btn-sm btn-edit" data-action="edit" data-linha="'+p.linha+'"><i class="fas fa-edit"></i></button>';
+if(podeExcluir)acoes+='<button class="btn-sm btn-delete" data-action="delete" data-linha="'+p.linha+'"><i class="fas fa-trash"></i></button>';
+return'<tr>'+
+'<td><strong>'+escapeHtml(p.codigo)+'</strong></td>'+
+'<td>'+escapeHtml(p.produto||'-')+' <div class="actions" style="display:inline-flex;margin-left:10px;">'+acoes+'</div></td>'+
+'<td>'+p.quantidade+'</td>'+
+'<td>'+formatarData(p.dataValidade)+'</td>'+
+'<td>'+(p.diasRestantes!==null?p.diasRestantes+'d':'-')+'</td>'+
+'<td>'+getStatusLabel(p.status)+'</td>'+
+'<td><select class="quebra-select '+qc+'" onchange="atualizarQuebra('+p.linha+',this.value)"><option value="Não"'+(p.quebra!=='Sim'?' selected':'')+'>Não</option><option value="Sim"'+(p.quebra==='Sim'?' selected':'')+'>Sim</option></select></td>'+
+'<td>'+escapeHtml(p.categoria||'-')+'</td>'+
+'<td>'+escapeHtml(p.subcategoria||'-')+'</td>'+
+'<td>'+formatarMoeda(p.precoCusto)+'</td>'+
+'<td>'+formatarMoeda(p.precoVenda)+'</td>'+
+'<td>'+escapeHtml(p.fornecedor||'-')+'</td>'+
+'<td>'+escapeHtml(p.estabelecimento||'-')+'</td>'+
+'</tr>';
+}).join('');
+}
+function renderizarCardsMobile(produtos){
+var container=document.getElementById('estoqueMobileCards');
+if(produtos.length===0){container.innerHTML='<div class="empty-state"><i class="fas fa-box-open"></i><h3>Nenhum produto</h3></div>';return;}
+var podeEditar=usuarioLogado.permissoes.Estoque.nivel!=='VIEW'&&usuarioLogado.permissoes.Estoque.nivel!=='NONE';
+var podeExcluir=usuarioLogado.permissoes.Estoque.nivel==='FULL';
+var acoes='';
+if(podeEditar)acoes+='<button class="btn-sm btn-edit" data-action="edit" data-linha="LINHA"><i class="fas fa-edit"></i></button>';
+if(podeExcluir)acoes+='<button class="btn-sm btn-delete" data-action="delete" data-linha="LINHA"><i class="fas fa-trash"></i></button>';
+container.innerHTML=produtos.map(function(p){
+var qc=p.quebra==='Sim'?'quebra-sim':'';
+return'<div class="product-card">'+
+'<div class="product-card-header">'+
+'<div><div class="product-card-name">'+escapeHtml(p.produto||'-')+'</div><div class="product-card-code">Cód: '+escapeHtml(p.codigo)+'</div></div>'+
+'<div class="actions">'+acoes.replace(/LINHA/g,p.linha)+'</div>'+
+'</div>'+
+'<div class="product-card-body">'+
+'<div class="product-card-field"><span class="field-label">Qtd</span><span class="field-value">'+p.quantidade+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Validade</span><span class="field-value">'+formatarData(p.dataValidade)+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Dias</span><span class="field-value">'+(p.diasRestantes!==null?p.diasRestantes+' dias':'-')+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Status</span><span class="field-value">'+getStatusLabel(p.status)+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Quebra</span><span class="field-value"><select class="quebra-select '+qc+'" onchange="atualizarQuebra('+p.linha+',this.value)"><option value="Não"'+(p.quebra!=='Sim'?' selected':'')+'>Não</option><option value="Sim"'+(p.quebra==='Sim'?' selected':'')+'>Sim</option></select></span></div>'+
+'<div class="product-card-field"><span class="field-label">Categoria</span><span class="field-value">'+escapeHtml(p.categoria||'-')+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Subcategoria</span><span class="field-value">'+escapeHtml(p.subcategoria||'-')+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Custo</span><span class="field-value">'+formatarMoeda(p.precoCusto)+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Venda</span><span class="field-value">'+formatarMoeda(p.precoVenda)+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Fornecedor</span><span class="field-value">'+escapeHtml(p.fornecedor||'-')+'</span></div>'+
+'<div class="product-card-field"><span class="field-label">Loja</span><span class="field-value">'+escapeHtml(p.estabelecimento||'-')+'</span></div>'+
+'</div></div>';
+}).join('');
+}
+window.atualizarQuebra=function(linha,valor){
+google.script.run.withSuccessHandler(function(){showToast('Quebra atualizada!','success');}).atualizarQuebra(linha,valor,usuarioLogado.perfil);
+};
+
+// MODAL PRODUTO
+function abrirModalProduto(resetar){
+if(!verificarAcao('create','Estoque'))return;
+if(resetar){document.getElementById('formProduto').reset();document.getElementById('produtoLinha').value='';document.getElementById('modalProdutoTitle').textContent='Novo Produto';}
+document.getElementById('modalProduto').classList.add('active');
+}
+function fecharModalProduto(){document.getElementById('modalProduto').classList.remove('active');}
+function editarProduto(linha){
+if(!verificarAcao('update','Estoque'))return;
+var p=produtosCache.find(function(x){return x.linha===linha;});
+if(!p)return;
+document.getElementById('modalProdutoTitle').textContent='Editar Produto';
+document.getElementById('produtoLinha').value=p.linha;
+document.getElementById('produtoCodigo').value=p.codigo;
+document.getElementById('produtoNome').value=p.produto||'';
+document.getElementById('produtoQuantidade').value=p.quantidade;
+document.getElementById('produtoDataValidade').value=p.dataValidade;
+document.getElementById('produtoCategoria').value=p.categoria||'';
+document.getElementById('produtoCategoria').dispatchEvent(new Event('change'));
+document.getElementById('produtoSubcategoria').value=p.subcategoria||'';
+document.getElementById('produtoPrecoCusto').value=p.precoCusto||'';
+document.getElementById('produtoPrecoVenda').value=p.precoVenda||'';
+document.getElementById('produtoFornecedor').value=p.fornecedor||'';
+document.getElementById('produtoEstabelecimento').value=p.estabelecimento||'';
+document.getElementById('produtoQuebra').value=p.quebra||'Não';
+document.getElementById('modalProduto').classList.add('active');
+}
+function salvarProduto(){
+if(!verificarAcao(document.getElementById('produtoLinha').value?'update':'create','Estoque'))return;
+var obj={linha:document.getElementById('produtoLinha').value||null,codigo:document.getElementById('produtoCodigo').value.trim(),produto:document.getElementById('produtoNome').value.trim(),quantidade:parseInt(document.getElementById('produtoQuantidade').value),dataValidade:document.getElementById('produtoDataValidade').value,categoria:document.getElementById('produtoCategoria').value,subcategoria:document.getElementById('produtoSubcategoria').value,precoCusto:parseFloat(document.getElementById('produtoPrecoCusto').value)||0,precoVenda:parseFloat(document.getElementById('produtoPrecoVenda').value)||0,fornecedor:document.getElementById('produtoFornecedor').value,estabelecimento:document.getElementById('produtoEstabelecimento').value,quebra:document.getElementById('produtoQuebra').value};
+showLoading('Salvando...');
+google.script.run.withSuccessHandler(function(r){hideLoading();if(r.sucesso){fecharModalProduto();showToast(r.mensagem,'success');carregarProdutos();}else showToast(r.mensagem,'error');}).salvarProduto(obj,usuarioLogado.perfil);
+}
+function excluirProduto(linha){
+if(!verificarAcao('delete','Estoque'))return;
+linhaExcluir=linha;document.getElementById('modalConfirmacao').classList.add('active');
+}
+function confirmarExclusao(){
+if(!linhaExcluir)return;
+showLoading('Excluindo...');
+google.script.run.withSuccessHandler(function(r){hideLoading();document.getElementById('modalConfirmacao').classList.remove('active');if(r.sucesso){showToast(r.mensagem,'success');carregarProdutos();}}).excluirProduto(linhaExcluir,usuarioLogado.perfil);
+}
+
+// SCANNER
+document.getElementById('btnAbrirCamera').addEventListener('click',function(){document.getElementById('fileInputScanner').click();});
+document.getElementById('fileInputScanner').addEventListener('change',function(e){
+var file=e.target.files[0];if(!file)return;
+imagemCapturadaScanner=file;
+var reader=new FileReader();
+reader.onload=function(ev){document.getElementById('previewImgScanner').src=ev.target.result;document.getElementById('previewContainerScanner').style.display='block';};
+reader.readAsDataURL(file);
+});
+document.getElementById('btnConfirmarScan').addEventListener('click',function(){
+if(!imagemCapturadaScanner)return;
+if(!html5QrCodeScanner)html5QrCodeScanner=new Html5Qrcode("previewImgScanner");
+html5QrCodeScanner.scanFile(imagemCapturadaScanner,true).then(function(text){document.getElementById('codigoInputScanner').value=text;document.getElementById('previewContainerScanner').style.display='none';executarScanManual();}).catch(function(){showToast('Código não detectado.','error');});
+});
+document.getElementById('btnCancelarScan').addEventListener('click',function(){document.getElementById('previewContainerScanner').style.display='none';document.getElementById('fileInputScanner').value='';imagemCapturadaScanner=null;});
+document.getElementById('btnPesquisarManual').addEventListener('click',executarScanManual);
+document.getElementById('codigoInputScanner').addEventListener('keypress',function(e){if(e.key==='Enter')executarScanManual();});
+function executarScanManual(){
+var codigo=document.getElementById('codigoInputScanner').value.trim();
+if(!codigo){showToast('Digite um código!','error');return;}
+var res=document.getElementById('resConteudoScanner');
+res.innerHTML='<span style="color:var(--accent-cyan);">Buscando...</span>';
+google.script.run.withSuccessHandler(function(r){
+if(r.sucesso){
+ultimoCodigoScanner=r.codigo;ultimoNomeScanner=r.descricao;
+res.innerHTML='<strong>Código:</strong> '+escapeHtml(r.codigo)+'<br><strong>Descrição:</strong> '+escapeHtml(r.descricao)+'<br><strong>Estoque:</strong> '+escapeHtml(r.quantidade)+'<br><strong>Validade:</strong> '+escapeHtml(r.dataValidade)+'<br><span class="badge badge-seguro">'+escapeHtml(r.mensagemEstoque)+'</span>';
+document.getElementById('acoesScanner').style.display='block';
+}else{res.innerHTML='<span style="color:var(--accent-red);">Erro: '+escapeHtml(r.mensagem)+'</span>';document.getElementById('acoesScanner').style.display='none';}
+}).salvarDadosNoSheets(codigo);
+}
+document.getElementById('btnCadastrarEstoque').addEventListener('click',function(){
+document.getElementById('produtoCodigo').value=ultimoCodigoScanner;
+document.getElementById('produtoNome').value=ultimoNomeScanner||'';
+document.getElementById('produtoLinha').value='';
+document.getElementById('modalProdutoTitle').textContent='Novo Produto';
+document.getElementById('modalProduto').classList.add('active');
+});
+
+// EVENT LISTENERS
+['filterProduto','filterCategoria','filterSubcategoria','filterEstabelecimento','filterFornecedor','filterStatus'].forEach(function(id){document.getElementById(id).addEventListener('change',filtrarProdutos);});
+document.getElementById('btnNovoProduto').addEventListener('click',function(){abrirModalProduto(true);});
+document.getElementById('btnNovaCategoria').addEventListener('click',function(){abrirModalCadastro('categoria');});
+document.getElementById('btnNovaSubcategoria').addEventListener('click',function(){abrirModalCadastro('subcategoria');});
+document.getElementById('btnNovoEstabelecimento').addEventListener('click',function(){abrirModalCadastro('estabelecimento');});
+document.getElementById('btnNovoFornecedor').addEventListener('click',function(){abrirModalCadastro('fornecedor');});
+document.getElementById('btnFecharModalProduto').addEventListener('click',fecharModalProduto);
+document.getElementById('btnCancelarProduto').addEventListener('click',fecharModalProduto);
+document.getElementById('btnSalvarProduto').addEventListener('click',salvarProduto);
+document.getElementById('btnFecharModalCadastro').addEventListener('click',fecharModalCadastro);
+document.getElementById('btnFecharCadastro').addEventListener('click',fecharModalCadastro);
+document.getElementById('btnSalvarCadastro').addEventListener('click',salvarCadastro);
+document.getElementById('btnFecharConfirmacao').addEventListener('click',function(){linhaExcluir=null;document.getElementById('modalConfirmacao').classList.remove('active');});
+document.getElementById('btnCancelarExclusao').addEventListener('click',function(){linhaExcluir=null;document.getElementById('modalConfirmacao').classList.remove('active');});
+document.getElementById('btnConfirmarExclusao').addEventListener('click',confirmarExclusao);
+document.getElementById('tbodyProdutos').addEventListener('click',function(e){var btn=e.target.closest('[data-action]');if(!btn)return;var action=btn.getAttribute('data-action');var linha=parseInt(btn.getAttribute('data-linha'));if(action==='edit')editarProduto(linha);else if(action==='delete')excluirProduto(linha);});
+document.getElementById('estoqueMobileCards').addEventListener('click',function(e){var btn=e.target.closest('[data-action]');if(!btn)return;var action=btn.getAttribute('data-action');var linha=parseInt(btn.getAttribute('data-linha'));if(action==='edit')editarProduto(linha);else if(action==='delete')excluirProduto(linha);});
+
+})();
+</script>
