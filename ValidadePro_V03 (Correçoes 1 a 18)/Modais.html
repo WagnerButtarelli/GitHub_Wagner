@@ -1,0 +1,88 @@
+<!-- Modais -->
+<div class="modal-overlay" id="modalProduto">
+<div class="modal">
+<div class="modal-header"><span class="modal-title" id="modalProdutoTitle">Novo Produto</span><button class="modal-close" id="btnFecharModalProduto"><i class="fas fa-times"></i></button></div>
+<div class="modal-body">
+<form id="formProduto">
+<input type="hidden" id="produtoLinha">
+<div class="form-group">
+<label class="form-label">Código</label>
+<div style="display:flex; gap:10px;">
+<input type="text" class="form-input" id="produtoCodigo" required style="flex:1;">
+<button type="button" class="btn btn-scan" id="btnScanProduto" style="width:auto; padding:0 16px;" title="Escanear código de barras"><i class="fas fa-barcode"></i></button>
+</div>
+</div>
+<div class="form-group"><label class="form-label">Produto</label><input type="text" class="form-input" id="produtoNome" required></div>
+<div class="form-group"><label class="form-label">Quantidade</label><input type="number" class="form-input" id="produtoQuantidade" required min="0"></div>
+<div class="form-group"><label class="form-label">Data de Validade</label><input type="date" class="form-input" id="produtoDataValidade" required></div>
+<div class="form-group"><label class="form-label">Categoria</label><select class="form-select" id="produtoCategoria" required><option value="">Selecione...</option></select></div>
+<div class="form-group"><label class="form-label">Subcategoria</label><select class="form-select" id="produtoSubcategoria"><option value="">Selecione...</option></select></div>
+<div class="form-group"><label class="form-label">Preço de Custo</label><input type="number" class="form-input" id="produtoPrecoCusto" step="0.01" min="0"></div>
+<div class="form-group"><label class="form-label">Preço de Venda</label><input type="number" class="form-input" id="produtoPrecoVenda" step="0.01" min="0"></div>
+<div class="form-group"><label class="form-label">Fornecedor</label><select class="form-select" id="produtoFornecedor" required><option value="">Selecione...</option></select></div>
+<div class="form-group"><label class="form-label">Estabelecimento</label><select class="form-select" id="produtoEstabelecimento" required><option value="">Selecione...</option></select></div>
+<div class="form-group"><label class="form-label">Rebaixa</label><select class="form-select" id="produtoQuebra"><option value="Não">Não</option><option value="Sim">Sim</option></select></div>
+</form>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" id="btnCancelarProduto">Cancelar</button><button class="btn btn-primary" id="btnSalvarProduto"><i class="fas fa-save"></i> Salvar</button></div>
+</div>
+</div>
+<div class="modal-overlay" id="modalCadastro">
+<div class="modal">
+<div class="modal-header"><span class="modal-title" id="modalCadastroTitle">Cadastro</span><button class="modal-close" id="btnFecharModalCadastro"><i class="fas fa-times"></i></button></div>
+<div class="modal-body">
+<div class="form-group" id="cadastroCategoriaGroup" style="display:none;">
+<label class="form-label">Categoria</label>
+<select class="form-select" id="cadastroCategoria"><option value="">Selecione...</option></select>
+</div>
+<div class="form-group"><label class="form-label" id="cadastroLabel">Nome</label><input type="text" class="form-input" id="cadastroInput" placeholder="Digite o nome..." required></div>
+<div class="lista-cadastro" id="cadastroListaContainer" style="display:none;">
+<h4 id="cadastroListaTitulo"><i class="fas fa-list"></i> Cadastrados</h4>
+<ul id="cadastroLista"></ul>
+</div>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" id="btnCancelarEdicaoCadastro" style="display:none;width:auto;"><i class="fas fa-times"></i> Cancelar Edição</button><button class="btn btn-secondary" id="btnFecharCadastro">Fechar</button><button class="btn btn-primary" id="btnSalvarCadastro"><i class="fas fa-plus"></i> Cadastrar</button></div>
+</div>
+</div>
+<div class="modal-overlay" id="modalConfirmacao">
+<div class="modal" style="max-width:400px;">
+<div class="modal-header"><span class="modal-title" style="color:var(--accent-red);"><i class="fas fa-exclamation-triangle"></i> Confirmar Exclusão</span><button class="modal-close" id="btnFecharConfirmacao"><i class="fas fa-times"></i></button></div>
+<div class="modal-body"><p style="color:var(--text-secondary);font-size:1rem;">Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.</p></div>
+<div class="modal-footer"><button class="btn btn-secondary" id="btnCancelarExclusao">Cancelar</button><button class="btn btn-delete" id="btnConfirmarExclusao"><i class="fas fa-trash"></i> Excluir</button></div>
+</div>
+</div>
+<div class="modal-overlay" id="modalPerfil">
+<div class="modal">
+<div class="modal-header"><span class="modal-title" id="modalPerfilTitle">Novo Perfil</span><button class="modal-close" id="btnFecharModalPerfil"><i class="fas fa-times"></i></button></div>
+<div class="modal-body">
+<form id="formPerfil">
+<input type="hidden" id="perfilLinha">
+<div class="form-group"><label class="form-label">Nome do Perfil</label><input type="text" class="form-input" id="perfilNome" required></div>
+<div class="form-group"><label class="form-label">Dashboard</label><select class="form-select" id="perfilNivelDashboard"><option value="NONE">Sem Acesso</option><option value="VIEW">Somente Visualização</option><option value="EDIT">Criar/Editar</option><option value="FULL">Acesso Total</option></select></div>
+<div class="form-group"><label class="form-label">Estoque</label><select class="form-select" id="perfilNivelEstoque"><option value="NONE">Sem Acesso</option><option value="VIEW">Somente Visualização</option><option value="EDIT">Criar/Editar</option><option value="FULL">Acesso Total</option></select></div>
+<div class="form-group"><label class="form-label">Relatórios</label><select class="form-select" id="perfilNivelRelatorios"><option value="NONE">Sem Acesso</option><option value="VIEW">Somente Visualização</option><option value="EDIT">Criar/Editar</option><option value="FULL">Acesso Total</option></select></div>
+<div class="form-group"><label class="form-label">Scanner</label><select class="form-select" id="perfilNivelScanner"><option value="NONE">Sem Acesso</option><option value="VIEW">Somente Visualização</option><option value="EDIT">Criar/Editar</option><option value="FULL">Acesso Total</option></select></div>
+<div class="form-group"><label class="form-label">Configurações</label><select class="form-select" id="perfilNivelConfiguracoes"><option value="NONE">Sem Acesso</option><option value="VIEW">Somente Visualização</option><option value="EDIT">Criar/Editar</option><option value="FULL">Acesso Total</option></select></div>
+</form>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" id="btnCancelarPerfil">Cancelar</button><button class="btn btn-primary" id="btnSalvarPerfil"><i class="fas fa-save"></i> Salvar</button></div>
+</div>
+</div>
+<div class="modal-overlay" id="modalUsuario">
+<div class="modal">
+<div class="modal-header"><span class="modal-title" id="modalUsuarioTitle">Novo Usuário</span><button class="modal-close" id="btnFecharModalUsuario"><i class="fas fa-times"></i></button></div>
+<div class="modal-body">
+<form id="formUsuario">
+<input type="hidden" id="usuarioLinha">
+<div class="form-group"><label class="form-label">Nome</label><input type="text" class="form-input" id="usuarioNome" required></div>
+<div class="form-group"><label class="form-label">Usuário (login)</label><input type="text" class="form-input" id="usuarioLogin" required></div>
+<div class="form-group"><label class="form-label" id="usuarioSenhaLabel">Senha</label><input type="password" class="form-input" id="usuarioSenha" placeholder="Digite a senha"></div>
+<div class="form-group"><label class="form-label">Setor</label><input type="text" class="form-input" id="usuarioSetor"></div>
+<div class="form-group"><label class="form-label">Perfil</label><select class="form-select" id="usuarioPerfilSelect" required><option value="">Selecione...</option></select></div>
+<div class="form-group"><label class="form-label">Status</label><select class="form-select" id="usuarioStatus"><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option></select></div>
+<div class="form-group"><label class="form-label">Nome da loja</label><select class="form-select" id="usuarioLoja"><option value="">Selecione...</option></select></div>
+</form>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" id="btnCancelarUsuario">Cancelar</button><button class="btn btn-primary" id="btnSalvarUsuario"><i class="fas fa-save"></i> Salvar</button></div>
+</div>
+</div>

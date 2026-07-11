@@ -1,0 +1,58 @@
+<!-- ===== CONFIGURAÇÕES ===== -->
+<section class="page-section" id="pageConfiguracoes">
+<h2 class="page-title"><i class="fas fa-cog"></i> Configurações</h2>
+<div class="card">
+<div class="card-header"><span class="card-title"><i class="fas fa-user-shield"></i> Informações do Usuário</span></div>
+<div class="card-body">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">
+<div><label class="form-label">Nome</label><div class="form-input" id="configNome" style="background:var(--bg-secondary);pointer-events:none;"></div></div>
+<div><label class="form-label">Usuário</label><div class="form-input" id="configUsuario" style="background:var(--bg-secondary);pointer-events:none;"></div></div>
+<div><label class="form-label">Setor</label><div class="form-input" id="configSetor" style="background:var(--bg-secondary);pointer-events:none;"></div></div>
+<div><label class="form-label">Perfil</label><div class="form-input" id="configPerfil" style="background:var(--bg-secondary);pointer-events:none;"></div></div>
+</div>
+</div>
+</div>
+<div class="card" style="margin-top:20px;">
+<div class="card-header"><span class="card-title"><i class="fas fa-key"></i> Permissões de Acesso</span></div>
+<div class="card-body">
+<div class="table-responsive">
+<table class="data-table">
+<thead><tr><th>Seção</th><th>Nível de Acesso</th><th>Descrição</th></tr></thead>
+<tbody id="tbodyPermissoes"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="configAdminSection" style="display:none;">
+<div class="card" style="margin-top:20px;">
+<div class="card-header">
+<span class="card-title"><i class="fas fa-user-tag"></i> Perfis de Acesso</span>
+<button class="btn-sm btn-add" id="btnNovoPerfil"><i class="fas fa-plus"></i> Novo Perfil</button>
+</div>
+<div class="card-body" style="padding:0;">
+<div class="table-responsive">
+<table class="data-table" id="tabelaPerfis">
+<thead><tr><th>Perfil</th><th>Dashboard</th><th>Estoque</th><th>Relatórios</th><th>Scanner</th><th>Configurações</th><th>Ações</th></tr></thead>
+<tbody id="tbodyPerfis"></tbody>
+</table>
+</div>
+<div class="empty-state" id="emptyPerfis" style="display:none;"><i class="fas fa-user-tag"></i><h3>Nenhum perfil cadastrado</h3></div>
+</div>
+</div>
+<div class="card" style="margin-top:20px;">
+<div class="card-header">
+<span class="card-title"><i class="fas fa-users"></i> Usuários do Sistema</span>
+<button class="btn-sm btn-add" id="btnNovoUsuario"><i class="fas fa-plus"></i> Novo Usuário</button>
+</div>
+<div class="card-body" style="padding:0;">
+<div class="table-responsive">
+<table class="data-table" id="tabelaUsuarios">
+<thead><tr><th>Nome</th><th>Usuário</th><th>Setor</th><th>Perfil</th><th>Status</th><th>Nome da loja</th><th>Último Acesso</th><th>Ações</th></tr></thead>
+<tbody id="tbodyUsuarios"></tbody>
+</table>
+</div>
+<div class="empty-state" id="emptyUsuarios" style="display:none;"><i class="fas fa-user-slash"></i><h3>Nenhum usuário cadastrado</h3></div>
+</div>
+</div>
+</div>
+</section>

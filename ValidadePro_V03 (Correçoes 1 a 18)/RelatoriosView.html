@@ -1,0 +1,19 @@
+<!-- ===== RELATÓRIOS ===== -->
+<section class="page-section" id="pageRelatorios">
+<h2 class="page-title"><i class="fas fa-file-alt"></i> Relatórios Preventivos</h2>
+<div class="filters-bar">
+<div class="filter-group"><label class="filter-label">Tipo de Relatório</label><select class="filter-select" id="relatorioTipo"><option value="proximos">Próximos do Vencimento</option><option value="vencidos">Produtos Vencidos</option><option value="todos">Todos os Produtos</option></select></div>
+<div class="filter-group" id="grupoDias"><label class="filter-label">Dias</label><select class="filter-select" id="relatorioDias"><option value="7">7 dias</option><option value="15">15 dias</option><option value="30">30 dias</option><option value="60">60 dias</option><option value="90">90 dias</option></select></div>
+<div class="filter-group"><label class="filter-label">Categoria</label><select class="filter-select" id="filterRelCategoria"><option value="">Todas</option></select></div>
+<div class="filter-group"><label class="filter-label">Subcategoria</label><select class="filter-select" id="filterRelSubcategoria"><option value="">Todas</option></select></div>
+<div class="filter-group"><label class="filter-label">Nome da loja</label><select class="filter-select" id="filterRelEstabelecimento"><option value="">Todos</option></select></div>
+<div class="filter-group"><label class="filter-label">Fornecedor</label><select class="filter-select" id="filterRelFornecedor"><option value="">Todos</option></select></div>
+<div class="filter-group" style="margin-left:auto;"><label class="filter-label">&nbsp;</label><div style="display:flex;gap:8px;"><button class="btn-sm btn-export" id="btnExportCSV"><i class="fas fa-file-csv"></i> Exportar CSV</button><button class="btn-sm btn-export" id="btnExportPDF" style="background:rgba(239,68,68,0.1);color:var(--accent-red);border-color:rgba(239,68,68,0.3);"><i class="fas fa-file-pdf"></i> Exportar PDF</button></div></div>
+</div>
+<div class="card"><div class="card-body" style="padding:0;">
+<div class="table-responsive">
+<table class="data-table" id="tabelaRelatorio"><thead><tr><th>Código</th><th>Produto</th><th>Qtd</th><th>Validade</th><th>Dias</th><th>Status</th><th>Categoria</th><th>Subcategoria</th><th>Custo</th><th>Venda</th><th>Fornecedor</th><th>Local</th><th>Sugestão</th></tr></thead><tbody id="tbodyRelatorio"></tbody></table>
+</div>
+<div class="empty-state" id="emptyRelatorio" style="display:none;"><i class="fas fa-clipboard-check"></i><h3>Nenhum resultado</h3><p>Ajuste os filtros do relatório.</p></div>
+</div></div>
+</section>
