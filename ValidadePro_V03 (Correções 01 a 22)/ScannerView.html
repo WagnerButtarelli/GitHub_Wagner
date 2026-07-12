@@ -1,0 +1,82 @@
+<!-- ===== SCANNER ===== -->
+<section class="page-section" id="pageScanner">
+  <h2 class="page-title"><i class="fas fa-barcode"></i> Leitor de Código de Barras</h2>
+  <div class="card">
+    <div class="card-body">
+      <!-- Botão principal para abrir a câmera externa -->
+      <div style="text-align:center; margin-bottom:20px;">
+        <button class="btn btn-primary" id="btnAbrirCameraExterna" style="width:100%; padding:16px; font-size:1.2rem;">
+          <i class="fas fa-camera"></i> Abrir Câmera e Escanear
+        </button>
+        <p style="color:var(--text-secondary); font-size:0.8rem; margin-top:8px;">
+          A câmera será aberta em uma nova janela. Após escanear, o código será preenchido automaticamente.
+        </p>
+      </div>
+
+      <div style="border-top:1px solid rgba(255,255,255,0.05); padding-top:16px; margin-top:8px;">
+        <h3 style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:8px;"><i class="fas fa-keyboard"></i> Ou digite manualmente</h3>
+        <!-- Display do código -->
+        <div style="text-align:center; margin-bottom:16px;">
+          <label class="form-label" style="font-size:0.9rem;">Código de Barras</label>
+          <div id="scannerDisplay" class="scanner-display">00000000000</div>
+        </div>
+
+        <!-- Teclado numérico -->
+        <div class="numpad">
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="1">1</button>
+            <button class="numpad-btn" data-value="2">2</button>
+            <button class="numpad-btn" data-value="3">3</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="4">4</button>
+            <button class="numpad-btn" data-value="5">5</button>
+            <button class="numpad-btn" data-value="6">6</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="7">7</button>
+            <button class="numpad-btn" data-value="8">8</button>
+            <button class="numpad-btn" data-value="9">9</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="apagar">← Apagar</button>
+            <button class="numpad-btn" data-value="0">0</button>
+            <button class="numpad-btn" data-value="limpar">C</button>
+          </div>
+          <div class="numpad-row" style="justify-content:center;">
+            <button class="numpad-btn numpad-ok" data-value="ok">OK</button>
+          </div>
+        </div>
+
+        <!-- Campo para nome do produto (opcional) -->
+        <div style="margin-top:16px;">
+          <label class="form-label" for="scannerNomeProduto">Nome do Produto (opcional)</label>
+          <input type="text" class="form-input" id="scannerNomeProduto" placeholder="Ex: Teclado Mecânico" style="text-align:center;">
+        </div>
+      </div>
+
+      <!-- Botão para abrir o formulário diretamente -->
+      <div style="margin-top:16px; text-align:center;">
+        <button class="btn btn-secondary" id="btnAbrirFormulario" style="width:auto; padding:10px 24px;">
+          <i class="fas fa-plus-circle"></i> Novo Produto com Código
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Histórico (mantido) -->
+  <div class="card" style="margin-top:20px;">
+    <div class="card-header">
+      <span class="card-title"><i class="fas fa-history"></i> Últimas 10 Pesquisas</span>
+      <button class="btn-sm btn-atualizar" id="btnAtualizarHistorico">🔄 Atualizar</button>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div class="table-responsive">
+        <table class="data-table" id="tabelaHistoricoScanner">
+          <thead><tr><th>Data/Hora</th><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Data Validade</th></tr></thead>
+          <tbody id="tbodyHistoricoScanner"><tr><td colspan="5" class="empty-state">Carregando histórico...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>

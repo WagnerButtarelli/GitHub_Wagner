@@ -1,0 +1,32 @@
+<!-- ===== ESTOQUE ===== -->
+<section class="page-section" id="pageEstoque">
+<h2 class="page-title"><i class="fas fa-boxes"></i> Controle de Estoque</h2>
+<div class="filters-bar">
+<div class="filter-group"><label class="filter-label">Produto</label><select class="filter-select" id="filterProduto"><option value="">Todos</option></select></div>
+<div class="filter-group"><label class="filter-label">Categoria</label><select class="filter-select" id="filterCategoria"><option value="">Todas</option></select></div>
+<div class="filter-group"><label class="filter-label">Subcategoria</label><select class="filter-select" id="filterSubcategoria"><option value="">Todas</option></select></div>
+<div class="filter-group"><label class="filter-label">Nome da loja</label><select class="filter-select" id="filterEstabelecimento"><option value="">Todos</option></select></div>
+<div class="filter-group"><label class="filter-label">Fornecedor</label><select class="filter-select" id="filterFornecedor"><option value="">Todos</option></select></div>
+<div class="filter-group"><label class="filter-label">Status</label><select class="filter-select" id="filterStatus"><option value="">Todos</option><option value="vencido">Vencidos</option><option value="supercritico">Supercríticos (≤3 dias)</option><option value="critico">Críticos (≤7 dias)</option><option value="alerta">Alerta (≤30 dias)</option><option value="seguro">Seguro</option></select></div>
+<div class="filter-group" style="margin-left:auto; display:flex; gap:8px;">
+<label class="filter-label">&nbsp;</label>
+<button class="btn-sm btn-delete" id="btnExcluirResolvidos"><i class="fas fa-broom"></i> Excluir Resolvidos</button>
+<button class="btn-sm btn-add" id="btnNovoProduto"><i class="fas fa-plus"></i> Novo Produto</button>
+</div>
+</div>
+<div class="filters-bar" style="margin-top:-10px;">
+<div class="filter-group"><button class="btn-sm btn-cad btn-cad-categoria" id="btnNovaCategoria"><i class="fas fa-tag"></i> + Categoria</button></div>
+<div class="filter-group"><button class="btn-sm btn-cad btn-cad-subcategoria" id="btnNovaSubcategoria"><i class="fas fa-list"></i> + Subcategoria</button></div>
+<div class="filter-group"><button class="btn-sm btn-cad btn-cad-loja" id="btnNovoEstabelecimento"><i class="fas fa-store"></i> + Loja</button></div>
+<div class="filter-group"><button class="btn-sm btn-cad btn-cad-fornecedor" id="btnNovoFornecedor"><i class="fas fa-truck"></i> + Fornecedor</button></div>
+</div>
+<div style="display:flex;justify-content:flex-end;margin:4px 0 10px;">
+<span class="badge badge-total" id="totalFiltroEstoque"><i class="fas fa-filter"></i> Total filtro: 0</span>
+</div>
+<div class="card"><div class="card-body" style="padding:0;">
+<div class="table-responsive">
+<table class="data-table" id="tabelaProdutos"><thead><tr><th>Código</th><th>Produto</th><th>Qtd</th><th>Validade</th><th>Dias</th><th>Status</th><th>Ações Rápidas</th><th>Categoria</th><th>Subcategoria</th><th>Custo</th><th>Venda</th><th>Fornecedor</th><th>Nome da loja</th><th>Cadastrado Por</th><th>Data Cadastro</th><th>Ações</th></tr></thead><tbody id="tbodyProdutos"></tbody></table>
+</div>
+<div class="empty-state" id="emptyProdutos" style="display:none;"><i class="fas fa-box-open"></i><h3>Nenhum produto encontrado</h3><p>Cadastre seu primeiro produto ou ajuste os filtros.</p></div>
+</div></div>
+</section>
