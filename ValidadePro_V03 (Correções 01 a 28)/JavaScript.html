@@ -1,0 +1,1612 @@
+<script>
+(function(){
+'use strict';
+var usuarioLogado=null;
+var produtosCache=[];
+var dashboardCache=null;
+var linhaExcluir=null;
+var charts={};
+var cadastroTipo='';
+var categoriasCache=[];
+var subcategoriasCache=[];
+var estabelecimentosCache=[];
+var fornecedoresCache=[];
+var perfisCache=[];
+var usuariosCache=[];
+var scannerTarget=null;
+var ultimoCodigoScanner='';
+var ultimoNomeScanner='';
+var cadastroEditando=null;
+var confirmacaoTipo=null;
+
+// ===== URL DA PÁGINA EXTERNA DE SCANNER (ALTERE PARA A SUA) =====
+var SCANNER_EXTERNO_URL = "https://wagnerbuttarelli.github.io/GitHub_Wagner/scanner-camera.html";
+
+// ========== BEEP ==========
+function emitirBeep() {
+  try {
+    var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var oscillator = audioCtx.createOscillator();
+    var gainNode = audioCtx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.frequency.value = 880;
+    oscillator.type = 'sine';
+    gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.15);
+  } catch (e) {
+    console.log('Beep!');
+  }
+}
+
+function ordenarAlfabetico(lista){return lista.slice().sort(function(a,b){return String(a).localeCompare(String(b),'pt-BR',{sensitivity:'base'});});}
+// ===== CORREÇÃO: overlay de carregamento com tempo limite de segurança =====
+var loadingTimeoutId = null;
+var loadingToken = 0;
+function showLoading(texto){
+  loadingToken++;
+  var meuToken = loadingToken;
+  document.getElementById('loadingOverlay').querySelector('.loading-text').textContent=texto||'Carregando...';
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  if (loadingTimeoutId) clearTimeout(loadingTimeoutId);
+  loadingTimeoutId = setTimeout(function(){
+    if (meuToken === loadingToken) {
+      hideLoading();
+      showToast('A operação demorou mais que o esperado. Verifique sua conexão e tente novamente.', 'error');
+    }
+  }, 20000);
+}
+function hideLoading(){
+  if (loadingTimeoutId) { clearTimeout(loadingTimeoutId); loadingTimeoutId = null; }
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+function showToast(mensagem,tipo){
+  var container=document.getElementById('toastContainer');
+  var toast=document.createElement('div');
+  toast.className='toast toast-'+tipo;
+  var icon=tipo==='success'?'fa-check-circle':tipo==='error'?'fa-times-circle':tipo==='warning'?'fa-exclamation-triangle':'fa-info-circle';
+  toast.innerHTML='<i class="fas '+icon+'"></i> '+mensagem;
+  container.appendChild(toast);
+  setTimeout(function(){toast.style.opacity='0';toast.style.transform='translateX(100%)';setTimeout(function(){toast.remove();},300);},3000);
+}
+function formatarData(dataStr){if(!dataStr)return'-';var data=new Date(dataStr+'T00:00:00');return data.toLocaleDateString('pt-BR');}
+function formatarMoeda(valor){if(!valor)return'R$ 0,00';return'R$ '+parseFloat(valor).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function escapeHtml(text){if(!text)return'';var div=document.createElement('div');div.textContent=text;return div.innerHTML;}
+function getStatusLabel(status){
+  var labels={'vencido':'<span class="badge badge-vencido"><i class="fas fa-times-circle"></i> Vencido</span>','supercritico':'<span class="badge badge-supercritico"><i class="fas fa-fire"></i> Supercrítico</span>','critico':'<span class="badge badge-critico"><i class="fas fa-exclamation-circle"></i> Crítico</span>','alerta':'<span class="badge badge-alerta"><i class="fas fa-exclamation-triangle"></i> Alerta</span>','seguro':'<span class="badge badge-seguro"><i class="fas fa-check-circle"></i> Seguro</span>'};
+  return labels[status]||status;
+}
+function getSugestao(produto){
+  if(produto.status==='vencido')return'<span style="color:var(--accent-red);"><i class="fas fa-ban"></i> Descartar</span>';
+  else if(produto.status==='supercritico')return'<span style="color:var(--accent-orange);"><i class="fas fa-fire"></i> Promoção Urgentíssima</span>';
+  else if(produto.status==='critico')return'<span style="color:var(--accent-yellow);"><i class="fas fa-tag"></i> Promoção Urgente</span>';
+  else if(produto.status==='alerta')return'<span style="color:var(--accent-yellow);"><i class="fas fa-percentage"></i> Desconto Progressivo</span>';
+  return'<span style="color:var(--accent-green);"><i class="fas fa-check"></i> Estoque Normal</span>';
+}
+
+// ========== VALIDAÇÃO CÓDIGO DE BARRAS ==========
+function validarCodigoBarras(codigo) {
+  var limpo = String(codigo).replace(/\s/g, '').replace(/[^0-9]/g, '');
+  if (!limpo) {
+    showToast('Código de barras inválido! Deve conter apenas números.', 'error');
+    return null;
+  }
+  return limpo;
+}
+
+// ==================== CONTROLE DE PERMISSÕES FRONTEND ====================
+function aplicarPermissoes(perfil,callback){
+  google.script.run
+  .withSuccessHandler(function(permissoes){
+    usuarioLogado.permissoes = permissoes;
+    var secoes = ['Dashboard','Estoque','Relatorios','Scanner','Configuracoes'];
+    var idsPaginas = {'Dashboard':'pageDashboard','Estoque':'pageEstoque','Relatorios':'pageRelatorios','Scanner':'pageScanner','Configuracoes':'pageConfiguracoes'};
+    var descricoes = {
+      'Dashboard':'Visualização de gráficos e estatísticas',
+      'Estoque':'Gerenciamento de produtos em estoque',
+      'Relatorios':'Geração de relatórios preventivos',
+      'Scanner':'Leitura de código de barras',
+      'Configuracoes':'Configurações do sistema'
+    };
+    var niveisLabels = {'NONE':'<span class="badge badge-none">Sem Acesso</span>','VIEW':'<span class="badge badge-view">Somente Visualização</span>','EDIT':'<span class="badge badge-edit">Criar/Editar</span>','FULL':'<span class="badge badge-full">Acesso Total</span>'};
+    secoes.forEach(function(secao){
+      var perm = permissoes[secao];
+      var navItem = document.querySelector('.nav-item[data-page="'+secao.toLowerCase()+'"]');
+      var pagina = document.getElementById(idsPaginas[secao]);
+      if(navItem){
+        if(!perm.permitido){navItem.classList.add('no-access');}
+        else{navItem.classList.remove('no-access');}
+      }
+      if(pagina){
+        if(!perm.permitido){pagina.classList.add('no-access');}
+        else{
+          pagina.classList.remove('no-access');
+          if(perm.nivel === 'VIEW'){
+            pagina.classList.add('view-only');
+          } else {
+            pagina.classList.remove('view-only');
+          }
+        }
+      }
+    });
+    var tbody = document.getElementById('tbodyPermissoes');
+    if(tbody){
+      var html = '';
+      secoes.forEach(function(secao){
+        var perm = permissoes[secao];
+        html += '<tr><td><strong>'+secao+'</strong></td><td>'+niveisLabels[perm.nivel]+'</td><td style="color:var(--text-secondary);font-size:0.85rem;">'+descricoes[secao]+'</td></tr>';
+      });
+      tbody.innerHTML = html;
+    }
+    ajustarBotoesPermissao(permissoes);
+    var paginaAtual = document.querySelector('.page-section.active');
+    if(paginaAtual && paginaAtual.classList.contains('no-access')){
+      var primeiraDisponivel = null;
+      for(var i=0;i<secoes.length;i++){
+        if(permissoes[secoes[i]].permitido){
+          primeiraDisponivel = secoes[i].toLowerCase();
+          break;
+        }
+      }
+      if(primeiraDisponivel){
+        document.querySelector('.nav-item[data-page="'+primeiraDisponivel+'"]').click();
+      }
+    }
+    if(typeof callback==='function')callback();
+  })
+  .withFailureHandler(function(error){
+    console.error('Erro ao carregar permissões:',error);
+  })
+  .getPermissoesUsuario(perfil);
+}
+
+function ajustarBotoesPermissao(permissoes){
+  if(permissoes.Estoque){
+    var btnNovo = document.getElementById('btnNovoProduto');
+    var btnsCad = document.querySelectorAll('.btn-cad');
+    var btnsEdit = document.querySelectorAll('.btn-edit');
+    var btnsDelete = document.querySelectorAll('.btn-delete');
+    if(permissoes.Estoque.nivel === 'VIEW'){
+      if(btnNovo)btnNovo.style.display='none';
+      btnsCad.forEach(function(b){b.style.display='none';});
+    } else if(permissoes.Estoque.nivel === 'NONE'){
+      if(btnNovo)btnNovo.style.display='none';
+      btnsCad.forEach(function(b){b.style.display='none';});
+    }
+    if(permissoes.Estoque.nivel !== 'FULL'){
+      btnsDelete.forEach(function(b){b.style.display='none';});
+    }
+  }
+  if(permissoes.Relatorios){
+    var btnCSV = document.getElementById('btnExportCSV');
+    var btnPDF = document.getElementById('btnExportPDF');
+    if(permissoes.Relatorios.nivel === 'VIEW' || permissoes.Relatorios.nivel === 'NONE'){
+      if(btnCSV)btnCSV.style.display='none';
+      if(btnPDF)btnPDF.style.display='none';
+    }
+  }
+  if(permissoes.Scanner){
+    var btnCadastrar = document.getElementById('btnCadastrarEstoque');
+    if(permissoes.Scanner.nivel === 'VIEW'){
+      if(btnCadastrar)btnCadastrar.style.display='none';
+    }
+  }
+}
+
+function verificarAcao(acao, secao){
+  if(!usuarioLogado || !usuarioLogado.permissoes) return false;
+  var perm = usuarioLogado.permissoes[secao];
+  if(!perm || !perm.permitido){
+    showToast('Acesso negado para esta seção.','error');
+    return false;
+  }
+  if(acao === 'delete' && perm.nivel !== 'FULL'){
+    showToast('Permissão insuficiente. Somente Gerentes podem excluir.','warning');
+    return false;
+  }
+  if((acao === 'create' || acao === 'update') && perm.nivel === 'VIEW'){
+    showToast('Permissão insuficiente. Seu perfil permite apenas visualização.','warning');
+    return false;
+  }
+  return true;
+}
+
+// ==================== LOGIN ====================
+document.getElementById('loginForm').addEventListener('submit',function(e){
+  e.preventDefault();
+  var usuario=document.getElementById('loginUsuario').value.trim();
+  var senha=document.getElementById('loginSenha').value.trim();
+  var alert=document.getElementById('loginAlert');
+  if(!usuario||!senha){alert.textContent='Preencha todos os campos!';alert.classList.add('show');return;}
+  showLoading('Autenticando...');
+  google.script.run
+  .withSuccessHandler(function(result){
+    hideLoading();
+    if(result.sucesso){
+      usuarioLogado=result.usuario;
+      document.getElementById('loginContainer').style.display='none';
+      document.getElementById('appContainer').classList.add('active');
+      document.getElementById('userName').textContent=result.usuario.nome;
+      document.getElementById('userRole').textContent=result.usuario.setor + ' (' + result.usuario.perfil + ')';
+      alert.classList.remove('show');
+      showToast('Bem-vindo, '+result.usuario.nome+'!','success');
+      aplicarPermissoes(result.usuario.perfil,function(){
+        verificarCodigoNaURL();
+        if(usuarioLogado.permissoes && usuarioLogado.permissoes.Dashboard && usuarioLogado.permissoes.Dashboard.permitido){
+          carregarDashboard();
+        }
+        if(usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.permitido){
+          carregarDadosAuxiliares();
+          carregarProdutos();
+        }
+      });
+    } else {
+      alert.textContent=result.mensagem;alert.classList.add('show');showToast(result.mensagem,'error');
+    }
+  })
+  .withFailureHandler(function(error){
+    hideLoading();alert.textContent='Erro de conexão: '+error.message;alert.classList.add('show');showToast('Erro de conexão!','error');
+  })
+  .autenticarUsuario(usuario,senha);
+});
+
+document.getElementById('btnLogout').addEventListener('click',function(){
+  usuarioLogado=null;produtosCache=[];dashboardCache=null;
+  document.getElementById('appContainer').classList.remove('active');
+  document.getElementById('loginContainer').style.display='flex';
+  document.getElementById('loginUsuario').value='';
+  document.getElementById('loginSenha').value='';
+  document.getElementById('loginAlert').classList.remove('show');
+  showToast('Sessão encerrada!','info');
+});
+
+// ==================== NAVEGAÇÃO ====================
+document.querySelectorAll('.nav-item').forEach(function(item){
+  item.addEventListener('click',function(){
+    if(this.classList.contains('no-access')){
+      showToast('Acesso negado para esta seção.','error');
+      return;
+    }
+    var page=this.getAttribute('data-page');
+    document.querySelectorAll('.page-section').forEach(function(s){s.classList.remove('active');});
+    document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+    document.getElementById('page'+page.charAt(0).toUpperCase()+page.slice(1)).classList.add('active');
+    this.classList.add('active');
+    if(page==='dashboard')carregarDashboard();
+    if(page==='estoque'){carregarDadosAuxiliares();carregarProdutos();}
+    if(page==='relatorios')gerarRelatorio();
+    if(page==='scanner')initScannerPage();
+    if(page==='configuracoes')carregarConfiguracoes();
+  });
+});
+
+function carregarConfiguracoes(){
+  if(usuarioLogado){
+    document.getElementById('configNome').textContent=usuarioLogado.nome;
+    document.getElementById('configUsuario').textContent=usuarioLogado.usuario;
+    document.getElementById('configSetor').textContent=usuarioLogado.setor;
+    document.getElementById('configPerfil').textContent=usuarioLogado.perfil;
+    var ehAdmin=usuarioLogado.permissoes && usuarioLogado.permissoes.Configuracoes && usuarioLogado.permissoes.Configuracoes.nivel==='FULL';
+    var painel=document.getElementById('configAdminSection');
+    if(painel){
+      painel.style.display=ehAdmin?'block':'none';
+      if(ehAdmin){carregarPerfis();carregarUsuarios();carregarEstabelecimentos();}
+    }
+  }
+}
+
+// ==================== PERFIS DE ACESSO (CRUD) ====================
+var NIVEL_LABELS={'NONE':'<span class="badge badge-none">Sem Acesso</span>','VIEW':'<span class="badge badge-view">Visualização</span>','EDIT':'<span class="badge badge-edit">Criar/Editar</span>','FULL':'<span class="badge badge-full">Total</span>'};
+function carregarPerfis(){
+  google.script.run
+  .withSuccessHandler(function(result){if(result.sucesso){perfisCache=result.perfis;renderizarTabelaPerfis();preencherSelectPerfis();}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){showToast('Erro ao carregar perfis!','error');})
+  .getPerfis();
+}
+function renderizarTabelaPerfis(){
+  var tbody=document.getElementById('tbodyPerfis');
+  var empty=document.getElementById('emptyPerfis');
+  if(perfisCache.length===0){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  tbody.innerHTML=perfisCache.map(function(p){
+    return'<tr>'+
+      '<td data-label="Perfil"><strong>'+p.perfil+'</strong></td>'+
+      '<td data-label="Dashboard">'+NIVEL_LABELS[p.Dashboard]+'</td>'+
+      '<td data-label="Estoque">'+NIVEL_LABELS[p.Estoque]+'</td>'+
+      '<td data-label="Relatórios">'+NIVEL_LABELS[p.Relatorios]+'</td>'+
+      '<td data-label="Scanner">'+NIVEL_LABELS[p.Scanner]+'</td>'+
+      '<td data-label="Configurações">'+NIVEL_LABELS[p.Configuracoes]+'</td>'+
+      '<td data-label="Ações"><div class="actions">'+
+      '<button class="btn-sm btn-edit" data-action="edit-perfil" data-linha="'+p.linha+'"><i class="fas fa-edit"></i></button>'+
+      '<button class="btn-sm btn-delete" data-action="delete-perfil" data-linha="'+p.linha+'"><i class="fas fa-trash"></i></button>'+
+      '</div></td>'+
+      '</tr>';
+  }).join('');
+}
+function abrirModalPerfil(){
+  document.getElementById('formPerfil').reset();
+  document.getElementById('perfilLinha').value='';
+  document.getElementById('modalPerfilTitle').textContent='Novo Perfil';
+  document.getElementById('modalPerfil').classList.add('active');
+}
+function fecharModalPerfil(){document.getElementById('modalPerfil').classList.remove('active');}
+function editarPerfil(linha){
+  var p=perfisCache.find(function(item){return item.linha===linha;});
+  if(!p)return;
+  document.getElementById('modalPerfilTitle').textContent='Editar Perfil';
+  document.getElementById('perfilLinha').value=p.linha;
+  document.getElementById('perfilNome').value=p.perfil;
+  document.getElementById('perfilNivelDashboard').value=p.Dashboard;
+  document.getElementById('perfilNivelEstoque').value=p.Estoque;
+  document.getElementById('perfilNivelRelatorios').value=p.Relatorios;
+  document.getElementById('perfilNivelScanner').value=p.Scanner;
+  document.getElementById('perfilNivelConfiguracoes').value=p.Configuracoes;
+  document.getElementById('modalPerfil').classList.add('active');
+}
+function salvarPerfilFront(){
+  var nome=document.getElementById('perfilNome').value.trim();
+  if(!nome){showToast('Digite o nome do perfil!','error');return;}
+  var linha=document.getElementById('perfilLinha').value;
+  var payload={
+    linha:linha?parseInt(linha):null,
+    perfil:nome,
+    Dashboard:document.getElementById('perfilNivelDashboard').value,
+    Estoque:document.getElementById('perfilNivelEstoque').value,
+    Relatorios:document.getElementById('perfilNivelRelatorios').value,
+    Scanner:document.getElementById('perfilNivelScanner').value,
+    Configuracoes:document.getElementById('perfilNivelConfiguracoes').value
+  };
+  showLoading('Salvando perfil...');
+  google.script.run
+  .withSuccessHandler(function(result){
+    hideLoading();
+    if(result.sucesso){
+      showToast(result.mensagem,'success');
+      fecharModalPerfil();
+      carregarPerfis();
+      carregarUsuarios();
+      if(usuarioLogado&&usuarioLogado.perfil===nome)aplicarPermissoes(usuarioLogado.perfil,function(){});
+    }else{showToast(result.mensagem,'error');}
+  })
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar perfil!','error');})
+  .salvarPerfil(payload,usuarioLogado?usuarioLogado.perfil:null);
+}
+function excluirPerfilFront(linha){
+  if(!confirm('Deseja realmente excluir este perfil?'))return;
+  showLoading('Excluindo perfil...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');carregarPerfis();}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao excluir perfil!','error');})
+  .excluirPerfil(linha,usuarioLogado?usuarioLogado.perfil:null);
+}
+function preencherSelectPerfis(){
+  var select=document.getElementById('usuarioPerfilSelect');
+  if(!select)return;
+  var atual=select.value;
+  var html='<option value="">Selecione...</option>';
+  ordenarAlfabetico(perfisCache.map(function(p){return p.perfil;})).forEach(function(nome){html+='<option value="'+nome+'">'+nome+'</option>';});
+  select.innerHTML=html;
+  if(atual)select.value=atual;
+}
+
+// ==================== USUÁRIOS DO SISTEMA (CRUD) ====================
+function carregarUsuarios(){
+  google.script.run
+  .withSuccessHandler(function(result){if(result.sucesso){usuariosCache=result.usuarios;renderizarTabelaUsuarios();}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){showToast('Erro ao carregar usuários!','error');})
+  .getUsuarios();
+}
+function renderizarTabelaUsuarios(){
+  var tbody=document.getElementById('tbodyUsuarios');
+  var empty=document.getElementById('emptyUsuarios');
+  if(usuariosCache.length===0){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  tbody.innerHTML=usuariosCache.map(function(u){
+    var statusBadge=u.status==='Ativo'?'<span class="badge badge-full">Ativo</span>':'<span class="badge badge-none">Inativo</span>';
+    return'<tr>'+
+      '<td data-label="Nome">'+u.nome+'</td>'+
+      '<td data-label="Usuário">'+u.usuario+'</td>'+
+      '<td data-label="Setor">'+(u.setor||'-')+'</td>'+
+      '<td data-label="Perfil">'+u.perfil+'</td>'+
+      '<td data-label="Status">'+statusBadge+'</td>'+
+      '<td data-label="Nome da loja">'+(u.loja||'-')+'</td>'+
+      '<td data-label="Último Acesso">'+(u.ultimoAcesso||'-')+'</td>'+
+      '<td data-label="Ações"><div class="actions">'+
+      '<button class="btn-sm btn-edit" data-action="edit-usuario" data-linha="'+u.linha+'"><i class="fas fa-edit"></i></button>'+
+      '<button class="btn-sm btn-delete" data-action="delete-usuario" data-linha="'+u.linha+'"><i class="fas fa-trash"></i></button>'+
+      '</div></td>'+
+      '</tr>';
+  }).join('');
+}
+function abrirModalUsuario(){
+  document.getElementById('formUsuario').reset();
+  document.getElementById('usuarioLinha').value='';
+  document.getElementById('modalUsuarioTitle').textContent='Novo Usuário';
+  document.getElementById('usuarioSenhaLabel').textContent='Senha';
+  document.getElementById('usuarioSenha').placeholder='Digite a senha';
+  preencherSelectPerfis();
+  preencherSelectLojaUsuario();
+  document.getElementById('modalUsuario').classList.add('active');
+}
+function fecharModalUsuario(){document.getElementById('modalUsuario').classList.remove('active');}
+function preencherSelectLojaUsuario(){
+  var select=document.getElementById('usuarioLoja');
+  if(!select)return;
+  var atual=select.value;
+  var html='<option value="">Selecione...</option>';
+  ordenarAlfabetico(estabelecimentosCache.slice()).forEach(function(e){html+='<option value="'+e+'">'+e+'</option>';});
+  select.innerHTML=html;
+  if(atual)select.value=atual;
+}
+function editarUsuario(linha){
+  var u=usuariosCache.find(function(item){return item.linha===linha;});
+  if(!u)return;
+  preencherSelectPerfis();
+  preencherSelectLojaUsuario();
+  document.getElementById('modalUsuarioTitle').textContent='Editar Usuário';
+  document.getElementById('usuarioLinha').value=u.linha;
+  document.getElementById('usuarioNome').value=u.nome;
+  document.getElementById('usuarioLogin').value=u.usuario;
+  document.getElementById('usuarioSenha').value='';
+  document.getElementById('usuarioSenhaLabel').textContent='Nova Senha (opcional)';
+  document.getElementById('usuarioSenha').placeholder='Deixe em branco para manter a senha atual';
+  document.getElementById('usuarioSetor').value=u.setor||'';
+  document.getElementById('usuarioPerfilSelect').value=u.perfil;
+  document.getElementById('usuarioStatus').value=u.status;
+  document.getElementById('usuarioLoja').value=u.loja||'';
+  document.getElementById('modalUsuario').classList.add('active');
+}
+function salvarUsuarioFront(){
+  var nome=document.getElementById('usuarioNome').value.trim();
+  var login=document.getElementById('usuarioLogin').value.trim();
+  var perfilSelecionado=document.getElementById('usuarioPerfilSelect').value;
+  if(!nome){showToast('Digite o nome!','error');return;}
+  if(!login){showToast('Digite o usuário (login)!','error');return;}
+  if(!perfilSelecionado){showToast('Selecione um perfil!','error');return;}
+  var linha=document.getElementById('usuarioLinha').value;
+  if(!linha&&!document.getElementById('usuarioSenha').value){showToast('Digite a senha!','error');return;}
+  var payload={
+    linha:linha?parseInt(linha):null,
+    nome:nome,
+    usuario:login,
+    senha:document.getElementById('usuarioSenha').value,
+    setor:document.getElementById('usuarioSetor').value.trim(),
+    perfil:perfilSelecionado,
+    status:document.getElementById('usuarioStatus').value,
+    loja:document.getElementById('usuarioLoja').value
+  };
+  showLoading('Salvando usuário...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');fecharModalUsuario();carregarUsuarios();}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar usuário!','error');})
+  .salvarUsuario(payload,usuarioLogado?usuarioLogado.perfil:null);
+}
+function excluirUsuarioFront(linha){
+  if(!confirm('Deseja realmente excluir este usuário?'))return;
+  showLoading('Excluindo usuário...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');carregarUsuarios();}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao excluir usuário!','error');})
+  .excluirUsuario(linha,usuarioLogado?usuarioLogado.perfil:null);
+}
+
+// ==================== DADOS AUXILIARES ====================
+function carregarDadosAuxiliares(){
+  carregarCategorias();carregarSubcategorias();carregarEstabelecimentos();carregarFornecedores();
+}
+function carregarCategorias(){
+  google.script.run
+  .withSuccessHandler(function(result){if(result.sucesso){categoriasCache=result.categorias;preencherSelectCategorias();}})
+  .withFailureHandler(function(error){console.error('Erro categorias:',error);})
+  .getCategorias();
+}
+function carregarSubcategorias(){
+  google.script.run
+  .withSuccessHandler(function(result){if(result.sucesso){subcategoriasCache=result.subcategorias;preencherSelectSubcategorias();}})
+  .withFailureHandler(function(error){console.error('Erro subcategorias:',error);})
+  .getSubcategorias();
+}
+function carregarEstabelecimentos(){
+  google.script.run
+  .withSuccessHandler(function(result){if(result.sucesso){estabelecimentosCache=result.estabelecimentos;preencherSelectEstabelecimentos();}})
+  .withFailureHandler(function(error){console.error('Erro estabelecimentos:',error);})
+  .getEstabelecimentos();
+}
+function carregarFornecedores(){
+  google.script.run
+  .withSuccessHandler(function(result){if(result.sucesso){fornecedoresCache=result.fornecedores;preencherSelectFornecedores();}})
+  .withFailureHandler(function(error){console.error('Erro fornecedores:',error);})
+  .getFornecedores();
+}
+function preencherSelectCategorias(){
+  var select=document.getElementById('filterCategoria');
+  var prodSelect=document.getElementById('produtoCategoria');
+  var relSelect=document.getElementById('filterRelCategoria');
+  var ordenadas=ordenarAlfabetico(categoriasCache);
+  var html='<option value="">Todas</option>';
+  var prodHtml='<option value="">Selecione...</option>';
+  var relHtml='<option value="">Todas</option>';
+  ordenadas.forEach(function(c){html+='<option value="'+c+'">'+c+'</option>';prodHtml+='<option value="'+c+'">'+c+'</option>';relHtml+='<option value="'+c+'">'+c+'</option>';});
+  select.innerHTML=html;prodSelect.innerHTML=prodHtml;relSelect.innerHTML=relHtml;
+}
+function preencherSelectSubcategorias(){
+  preencherSelectSubcategoriasPorCategoria('filterSubcategoria','');
+  preencherSelectSubcategoriasPorCategoria('filterRelSubcategoria','');
+}
+function preencherSelectSubcategoriasPorCategoria(idSelect,categoria){
+  var select=document.getElementById(idSelect);
+  if(!select)return;
+  var lista=subcategoriasCache.filter(function(item){return !categoria||item.categoria===categoria;});
+  lista=lista.slice().sort(function(a,b){return String(a.subcategoria).localeCompare(String(b.subcategoria),'pt-BR',{sensitivity:'base'});});
+  var html='<option value="">Todas</option>';
+  lista.forEach(function(item){var label=categoria?item.subcategoria:item.subcategoria+' ('+item.categoria+')';html+='<option value="'+item.subcategoria+'">'+label+'</option>';});
+  select.innerHTML=html;
+}
+// ===== CORREÇÃO ITEM 26/27: função responsável por popular o select de Subcategoria =====
+// do modal de Produto conforme a Categoria escolhida. Ela era chamada em 3 pontos do
+// código (abrir modal para novo produto vindo do scanner, editarProduto e no listener de
+// mudança da Categoria) mas nunca havia sido definida, o que gerava um erro de referência
+// (ReferenceError) e interrompia a execução das funções que a chamavam - por isso a
+// Subcategoria nunca era preenchida e o botão Editar de produtos também não abria o modal.
+function atualizarSubcategoriasPorCategoria(categoria){
+  var select=document.getElementById('produtoSubcategoria');
+  if(!select)return;
+  var valorAtual=select.value;
+  var lista=subcategoriasCache.filter(function(item){return !categoria||item.categoria===categoria;});
+  lista=lista.slice().sort(function(a,b){return String(a.subcategoria).localeCompare(String(b.subcategoria),'pt-BR',{sensitivity:'base'});});
+  var html='<option value="">Selecione...</option>';
+  lista.forEach(function(item){html+='<option value="'+item.subcategoria+'">'+item.subcategoria+'</option>';});
+  select.innerHTML=html;
+  if(lista.some(function(item){return item.subcategoria===valorAtual;}))select.value=valorAtual;
+}
+// ===== FIM CORREÇÃO ITEM 26/27 =====
+function preencherSelectEstabelecimentos(){
+  var select=document.getElementById('filterEstabelecimento');
+  var prodSelect=document.getElementById('produtoEstabelecimento');
+  var relSelect=document.getElementById('filterRelEstabelecimento');
+  var ordenados=ordenarAlfabetico(estabelecimentosCache);
+  var html='<option value="">Todos</option>';
+  var prodHtml='<option value="">Selecione...</option>';
+  var relHtml='<option value="">Todos</option>';
+  ordenados.forEach(function(e){html+='<option value="'+e+'">'+e+'</option>';prodHtml+='<option value="'+e+'">'+e+'</option>';relHtml+='<option value="'+e+'">'+e+'</option>';});
+  select.innerHTML=html;prodSelect.innerHTML=prodHtml;relSelect.innerHTML=relHtml;
+}
+function preencherSelectFornecedores(){
+  var select=document.getElementById('filterFornecedor');
+  var prodSelect=document.getElementById('produtoFornecedor');
+  var relSelect=document.getElementById('filterRelFornecedor');
+  var ordenados=ordenarAlfabetico(fornecedoresCache);
+  var html='<option value="">Todos</option>';
+  var prodHtml='<option value="">Selecione...</option>';
+  var relHtml='<option value="">Todos</option>';
+  ordenados.forEach(function(f){html+='<option value="'+f+'">'+f+'</option>';prodHtml+='<option value="'+f+'">'+f+'</option>';relHtml+='<option value="'+f+'">'+f+'</option>';});
+  select.innerHTML=html;prodSelect.innerHTML=prodHtml;relSelect.innerHTML=relHtml;
+}
+
+// ===== FUNÇÃO PARA PREENCHER O DATALIST DE PRODUTOS =====
+function preencherListaProdutos(){
+  var datalist = document.getElementById('produtoList');
+  if(!datalist) return;
+  var produtosUnicos=[];
+  var seen={};
+  produtosCache.forEach(function(p){
+    if(p.produto && !seen[p.produto]){
+      seen[p.produto]=true;
+      produtosUnicos.push(p.produto);
+    }
+  });
+  produtosUnicos = ordenarAlfabetico(produtosUnicos);
+  var html = '';
+  produtosUnicos.forEach(function(nome){
+    html += '<option value="'+escapeHtml(nome)+'">';
+  });
+  datalist.innerHTML = html;
+}
+
+// ==================== CADASTRO AUXILIAR ====================
+function abrirModalCadastro(tipo){
+  if(!verificarAcao('create','Estoque'))return;
+  cadastroTipo=tipo;
+  cadastroEditando=null;
+  document.getElementById('btnCancelarEdicaoCadastro').style.display='none';
+  document.getElementById('cadastroInput').disabled=false;
+  var titulos={'categoria':'Cadastrar Categoria','subcategoria':'Cadastrar Subcategoria','estabelecimento':'Cadastrar Estabelecimento','fornecedor':'Cadastrar Fornecedor'};
+  var labels={'categoria':'Nome da Categoria','subcategoria':'Nome da Subcategoria','estabelecimento':'Nome do Estabelecimento','fornecedor':'Nome do Fornecedor'};
+  document.getElementById('modalCadastroTitle').textContent=titulos[tipo];
+  document.getElementById('cadastroLabel').textContent=labels[tipo];
+  document.getElementById('cadastroInput').value='';
+  document.getElementById('cadastroInput').placeholder='Digite o '+labels[tipo].toLowerCase()+'...';
+  document.getElementById('btnSalvarCadastro').innerHTML='<i class="fas fa-plus"></i> Cadastrar';
+  var catGroup=document.getElementById('cadastroCategoriaGroup');
+  if(tipo==='subcategoria'){catGroup.style.display='block';var selectCat=document.getElementById('cadastroCategoria');var html='<option value="">Selecione...</option>';ordenarAlfabetico(categoriasCache).forEach(function(c){html+='<option value="'+c+'">'+c+'</option>';});selectCat.innerHTML=html;selectCat.disabled=false;}
+  else{catGroup.style.display='none';}
+  var listaContainer=document.getElementById('cadastroListaContainer');
+  var lista=document.getElementById('cadastroLista');
+  var listaTitulo=document.getElementById('cadastroListaTitulo');
+  var dados,tituloLista;
+  if(tipo==='categoria'){dados=ordenarAlfabetico(categoriasCache).map(function(c){return{categoria:c};});tituloLista='<i class="fas fa-tags"></i> Categorias Cadastradas';}
+  else if(tipo==='subcategoria'){dados=subcategoriasCache.slice().sort(function(a,b){return String(a.subcategoria).localeCompare(String(b.subcategoria),'pt-BR',{sensitivity:'base'});});tituloLista='<i class="fas fa-tags"></i> Subcategorias Cadastradas';}
+  else if(tipo==='estabelecimento'){dados=ordenarAlfabetico(estabelecimentosCache).map(function(e){return{estabelecimento:e};});tituloLista='<i class="fas fa-store"></i> Estabelecimentos Cadastrados';}
+  else if(tipo==='fornecedor'){dados=ordenarAlfabetico(fornecedoresCache).map(function(f){return{fornecedor:f};});tituloLista='<i class="fas fa-truck"></i> Fornecedores Cadastrados';}
+  listaTitulo.innerHTML=tituloLista;
+  if(dados&&dados.length>0){
+    listaContainer.style.display='block';
+    var podeFull = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel === 'FULL';
+    var podeEditar = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel !== 'VIEW' && usuarioLogado.permissoes.Estoque.nivel !== 'NONE';
+    // ===== CORREÇÃO ITEM 28b: os botões de Editar/Excluir desta lista usavam atributos
+    // onclick="..." apontando para funções (editarCadastroItemAbrir/excluirCadastroItem)
+    // que existem dentro do IIFE (function(){...})() que envolve todo o JavaScript.html.
+    // Atributos onclick inline são executados no escopo global da página, então eles nunca
+    // enxergavam essas funções (ficam "presas" dentro do closure) - por isso os cliques não
+    // faziam nada. A solução, no mesmo padrão já usado pelas tabelas de Produtos/Perfis/
+    // Usuários, é usar data-attributes + um listener delegado (adicionado mais abaixo, junto
+    // com os demais listeners do DOMContentLoaded), que roda dentro do closure e por isso
+    // tem acesso direto às funções. Também evita quebrar o HTML quando o nome cadastrado
+    // contiver aspas.
+    lista.innerHTML=dados.map(function(item){
+      var label='',v1='',v2='';
+      if(tipo==='categoria'){label=item.categoria;v1=item.categoria;}
+      else if(tipo==='subcategoria'){label=item.subcategoria+' ('+item.categoria+')';v1=item.categoria;v2=item.subcategoria;}
+      else if(tipo==='estabelecimento'){label=item.estabelecimento;v1=item.estabelecimento;}
+      else if(tipo==='fornecedor'){label=item.fornecedor;v1=item.fornecedor;}
+      var v1Attr=escapeHtml(v1).replace(/"/g,'&quot;');
+      var v2Attr=escapeHtml(v2).replace(/"/g,'&quot;');
+      var editBtn = podeEditar ? '<button type="button" class="btn-delete-item" style="background:rgba(0,212,255,0.1);color:var(--accent-cyan);margin-right:6px;" data-action="editar-cadastro" data-tipo="'+tipo+'" data-v1="'+v1Attr+'" data-v2="'+v2Attr+'" title="Editar"><i class="fas fa-edit"></i></button>' : '';
+      var deleteBtn = podeFull ? '<button type="button" class="btn-delete-item" data-action="excluir-cadastro" data-tipo="'+tipo+'" data-v1="'+v1Attr+'" data-v2="'+v2Attr+'" title="Excluir"><i class="fas fa-times"></i></button>' : '';
+      return'<li><span>'+label+'</span><span>'+editBtn+deleteBtn+'</span></li>';
+    }).join('');
+    // ===== FIM CORREÇÃO ITEM 28b =====
+  }else{listaContainer.style.display='none';}
+  document.getElementById('modalCadastro').classList.add('active');
+  setTimeout(function(){document.getElementById('cadastroInput').focus();},100);
+}
+function editarCadastroItemAbrir(tipo,valor1,valor2){
+  if(!verificarAcao('update','Estoque'))return;
+  cadastroTipo=tipo;
+  if(tipo==='subcategoria'){
+    cadastroEditando={tipo:tipo,categoria:valor1,original:valor2};
+    document.getElementById('cadastroCategoria').value=valor1;
+    document.getElementById('cadastroCategoria').disabled=true;
+    document.getElementById('cadastroInput').value=valor2;
+    document.getElementById('modalCadastroTitle').textContent='Editar Subcategoria';
+  }else{
+    cadastroEditando={tipo:tipo,original:valor1};
+    document.getElementById('cadastroInput').value=valor1;
+    var titulosEdit={'categoria':'Editar Categoria','estabelecimento':'Editar Estabelecimento','fornecedor':'Editar Fornecedor'};
+    document.getElementById('modalCadastroTitle').textContent=titulosEdit[tipo];
+  }
+  document.getElementById('btnSalvarCadastro').innerHTML='<i class="fas fa-save"></i> Salvar Alteração';
+  document.getElementById('btnCancelarEdicaoCadastro').style.display='inline-block';
+  setTimeout(function(){document.getElementById('cadastroInput').focus();},100);
+}
+function cancelarEdicaoCadastro(){
+  cadastroEditando=null;
+  document.getElementById('cadastroCategoria').disabled=false;
+  document.getElementById('btnCancelarEdicaoCadastro').style.display='none';
+  document.getElementById('btnSalvarCadastro').innerHTML='<i class="fas fa-plus"></i> Cadastrar';
+  abrirModalCadastro(cadastroTipo);
+}
+function fecharModalCadastro(){document.getElementById('modalCadastro').classList.remove('active');cadastroTipo='';cadastroEditando=null;document.getElementById('cadastroCategoria').disabled=false;}
+function salvarCadastro(){
+  var acao=cadastroEditando?'update':'create';
+  if(!verificarAcao(acao,'Estoque'))return;
+  var nome=document.getElementById('cadastroInput').value.trim();
+  if(!nome){showToast('Digite um nome!','error');return;}
+  if(cadastroEditando){
+    var funcaoEdit,argsEdit=[];
+    if(cadastroEditando.tipo==='categoria'){funcaoEdit='editarCategoria';argsEdit=[cadastroEditando.original,nome];}
+    else if(cadastroEditando.tipo==='subcategoria'){funcaoEdit='editarSubcategoria';argsEdit=[cadastroEditando.categoria,cadastroEditando.original,nome];}
+    else if(cadastroEditando.tipo==='estabelecimento'){funcaoEdit='editarEstabelecimento';argsEdit=[cadastroEditando.original,nome];}
+    else if(cadastroEditando.tipo==='fornecedor'){funcaoEdit='editarFornecedor';argsEdit=[cadastroEditando.original,nome];}
+    else return;
+    showLoading('Salvando alteração...');
+    google.script.run
+    .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');cadastroEditando=null;document.getElementById('btnCancelarEdicaoCadastro').style.display='none';document.getElementById('btnSalvarCadastro').innerHTML='<i class="fas fa-plus"></i> Cadastrar';carregarDadosAuxiliares();carregarProdutos();setTimeout(function(){abrirModalCadastro(cadastroTipo);},200);}else{showToast(result.mensagem,'error');}})
+    .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar alteração!','error');})
+    [funcaoEdit].apply(null,argsEdit.concat([usuarioLogado?usuarioLogado.perfil:null]));
+    return;
+  }
+  if(cadastroTipo==='subcategoria'){
+    var categoria=document.getElementById('cadastroCategoria').value;
+    if(!categoria){showToast('Selecione uma categoria!','error');return;}
+    showLoading('Cadastrando subcategoria...');
+    google.script.run
+    .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');document.getElementById('cadastroInput').value='';carregarDadosAuxiliares();setTimeout(function(){abrirModalCadastro(cadastroTipo);},200);}else{showToast(result.mensagem,'error');}})
+    .withFailureHandler(function(error){hideLoading();showToast('Erro ao cadastrar!','error');})
+    .salvarSubcategoria(categoria,nome,usuarioLogado?usuarioLogado.perfil:null);
+    return;
+  }
+  var funcao;
+  if(cadastroTipo==='categoria')funcao='salvarCategoria';
+  else if(cadastroTipo==='estabelecimento')funcao='salvarEstabelecimento';
+  else if(cadastroTipo==='fornecedor')funcao='salvarFornecedor';
+  else return;
+  showLoading('Cadastrando...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');document.getElementById('cadastroInput').value='';carregarDadosAuxiliares();setTimeout(function(){abrirModalCadastro(cadastroTipo);},200);}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao cadastrar!','error');})
+  [funcao](nome,usuarioLogado?usuarioLogado.perfil:null);
+}
+function excluirCadastroItem(tipo,param1,param2){
+  if(!verificarAcao('delete','Estoque'))return;
+  if(!confirm('Deseja realmente excluir?'))return;
+  var funcao,args=[];
+  if(tipo==='categoria'){funcao='excluirCategoria';args=[param1];}
+  else if(tipo==='subcategoria'){funcao='excluirSubcategoria';args=[param1,param2];}
+  else if(tipo==='estabelecimento'){funcao='excluirEstabelecimento';args=[param1];}
+  else if(tipo==='fornecedor'){funcao='excluirFornecedor';args=[param1];}
+  else return;
+  showLoading('Excluindo...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');carregarDadosAuxiliares();setTimeout(function(){abrirModalCadastro(cadastroTipo);},200);}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao excluir!','error');})
+  [funcao].apply(null,args.concat([usuarioLogado?usuarioLogado.perfil:null]));
+}
+
+// ==================== DASHBOARD ====================
+function carregarDashboard(){
+  if(!verificarAcao('view','Dashboard'))return;
+  showLoading('Carregando dashboard...');
+  google.script.run
+  .withSuccessHandler(function(result){
+    hideLoading();
+    if(result.sucesso){dashboardCache=result;renderizarDashboard(result);}
+    else{showToast(result.mensagem,'error');}
+  })
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao carregar dashboard!','error');})
+  .getDashboardData();
+}
+function renderizarDashboard(data){
+  var resumo=data.resumo;
+  var statsGrid=document.getElementById('statsGrid');
+  statsGrid.innerHTML=
+    '<div class="stat-card total"><div class="stat-icon"><i class="fas fa-boxes"></i></div><div class="stat-value">'+resumo.total+'</div><div class="stat-label">Total de Produtos</div></div>'+
+    '<div class="stat-card supercritico"><div class="stat-icon"><i class="fas fa-fire"></i></div><div class="stat-value">'+resumo.supercritico+'</div><div class="stat-label">Supercrítico (≤3 dias)</div></div>'+
+    '<div class="stat-card critico"><div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div><div class="stat-value">'+resumo.critico+'</div><div class="stat-label">Crítico (≤7 dias)</div></div>'+
+    '<div class="stat-card alerta"><div class="stat-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="stat-value">'+resumo.alerta+'</div><div class="stat-label">Alerta (≤30 dias)</div></div>'+
+    '<div class="stat-card seguro"><div class="stat-icon"><i class="fas fa-check-circle"></i></div><div class="stat-value">'+resumo.seguro+'</div><div class="stat-label">Seguro (30+ dias)</div></div>'+
+    '<div class="stat-card perda"><div class="stat-icon"><i class="fas fa-money-bill-wave"></i></div><div class="stat-value">'+formatarMoeda(resumo.valorPerda)+'</div><div class="stat-label">Valor em Perdas</div></div>'+
+    '<div class="stat-card perda-prox"><div class="stat-icon"><i class="fas fa-hand-holding-usd"></i></div><div class="stat-value">'+formatarMoeda(resumo.valorPerdaProximo)+'</div><div class="stat-label">Risco de Perda</div></div>';
+  renderizarChartStatus(resumo);
+  renderizarChartCategorias(data.categorias);
+  renderizarChartVencimentos(data.vencimentosPorMes);
+  renderizarChartEstabelecimentos(data.estabelecimentos);
+  renderizarSugestoes(data);
+}
+function renderizarChartStatus(resumo){
+  var ctx=document.getElementById('chartStatus').getContext('2d');
+  if(charts.status)charts.status.destroy();
+  charts.status=new Chart(ctx,{
+    type:'doughnut',
+    data:{labels:['Vencidos','Supercrítico','Crítico','Alerta','Seguro'],datasets:[{data:[resumo.vencidos,resumo.supercritico,resumo.critico,resumo.alerta,resumo.seguro],backgroundColor:['#ef4444','#f97316','#f59e0b','#fbbf24','#10b981'],borderColor:'#1a1a2e',borderWidth:3,hoverOffset:10}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8892b0',padding:15,font:{size:12}}}},cutout:'65%'}
+  });
+}
+function renderizarChartCategorias(categorias){
+  var ctx=document.getElementById('chartCategoria').getContext('2d');
+  if(charts.categoria)charts.categoria.destroy();
+  var labels=Object.keys(categorias);
+  var data=Object.values(categorias);
+  var paletaCores=['#00d4ff','#a855f7','#ec4899','#10b981','#f59e0b','#ef4444','#3b82f6','#f97316','#8b5cf6','#14b8a6','#e11d48','#06b6d4','#84cc16','#d946ef','#f43f5e'];
+  var bgCores=[],borderCores=[];
+  for(var i=0;i<labels.length;i++){var cor=paletaCores[i%paletaCores.length];bgCores.push(cor+'99');borderCores.push(cor);}
+  charts.categoria=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:'Produtos',data:data,backgroundColor:bgCores,borderColor:borderCores,borderWidth:2,borderRadius:8,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8892b0'},grid:{color:'rgba(255,255,255,0.03)'}},x:{ticks:{color:'#8892b0'},grid:{display:false}}}}
+  });
+}
+function renderizarChartVencimentos(vencimentos){
+  var ctx=document.getElementById('chartVencimentos').getContext('2d');
+  if(charts.vencimentos)charts.vencimentos.destroy();
+  var meses=Object.keys(vencimentos).sort();
+  var data=meses.map(function(m){return vencimentos[m];});
+  var paleta=['#00d4ff','#a855f7','#ec4899','#10b981','#f59e0b','#ef4444','#3b82f6','#f97316','#8b5cf6','#14b8a6','#e11d48','#06b6d4'];
+  var bg=[],bordas=[];
+  for(var i=0;i<meses.length;i++){var cor=paleta[i%paleta.length];bg.push(cor+'99');bordas.push(cor);}
+  charts.vencimentos=new Chart(ctx,{
+    type:'bar',
+    data:{labels:meses,datasets:[{label:'Vencimentos',data:data,backgroundColor:bg,borderColor:bordas,borderWidth:2,borderRadius:8,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{color:'#8892b0'},grid:{color:'rgba(255,255,255,0.03)'}},x:{ticks:{color:'#8892b0'},grid:{display:false}}}}
+  });
+}
+function renderizarChartEstabelecimentos(estabelecimentos){
+  var ctx=document.getElementById('chartEstabelecimento').getContext('2d');
+  if(charts.estabelecimento)charts.estabelecimento.destroy();
+  var labels=Object.keys(estabelecimentos);
+  var data=Object.values(estabelecimentos);
+  var cores=['rgba(0,212,255,0.6)','rgba(168,85,247,0.6)','rgba(236,72,153,0.6)','rgba(16,185,129,0.6)','rgba(245,158,11,0.6)'];
+  var bordas=['#00d4ff','#a855f7','#ec4899','#10b981','#f59e0b'];
+  charts.estabelecimento=new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:'Produtos',data:data,backgroundColor:cores,borderColor:bordas,borderWidth:1,borderRadius:8,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{color:'#8892b0'},grid:{color:'rgba(255,255,255,0.03)'}},y:{ticks:{color:'#8892b0'},grid:{display:false}}}}
+  });
+}
+function renderizarSugestoes(data){
+  var container=document.getElementById('sugestoesContainer');
+  var sugestoes=[];
+  if(data.resumo.vencidos>0){sugestoes.push({icon:'fa-ban',titulo:'Descarte Imediato',desc:data.resumo.vencidos+' produto(s) vencido(s). Realize o descarte conforme regulamentação.'});}
+  if(data.resumo.supercritico>0){sugestoes.push({icon:'fa-fire',titulo:'Promoção Urgentíssima',desc:data.resumo.supercritico+' produto(s) supercrítico(s) (≤3 dias). Aplique descontos imediatos ou transfira para consumo interno.'});}
+  if(data.resumo.critico>0){sugestoes.push({icon:'fa-tags',titulo:'Promoção Urgente',desc:data.resumo.critico+' produto(s) crítico(s). Aplique descontos de 30-50%.'});}
+  if(data.resumo.alerta>0){sugestoes.push({icon:'fa-percentage',titulo:'Desconto Progressivo',desc:data.resumo.alerta+' produto(s) em alerta. Campanha 10% → 20% → 30%.'});}
+  if(parseFloat(data.resumo.valorPerdaProximo)>0){sugestoes.push({icon:'fa-exchange-alt',titulo:'Transferência entre Lojas',desc:'Risco de '+formatarMoeda(data.resumo.valorPerdaProximo)+'. Avalie transferir para unidades com maior giro.'});}
+  if(sugestoes.length===0){container.innerHTML='<div class="empty-state" style="padding:30px;"><i class="fas fa-thumbs-up" style="color:var(--accent-green);opacity:0.5;"></i><h3>Excelente!</h3><p>Nenhuma sugestão necessária.</p></div>';return;}
+  container.innerHTML=sugestoes.map(function(s){return'<div class="suggestion-card"><h4><i class="fas '+s.icon+'"></i> '+s.titulo+'</h4><p>'+s.desc+'</p></div>';}).join('');
+}
+
+// ==================== ESTOQUE ====================
+function carregarProdutos(){
+  if(!verificarAcao('view','Estoque'))return;
+  showLoading('Carregando produtos...');
+  google.script.run
+  .withSuccessHandler(function(result){
+    hideLoading();
+    if(result.sucesso){
+      produtosCache=result.produtos;
+      preencherListaProdutos(); // preenche o datalist
+      filtrarProdutos();
+      atualizarStatsScanner();
+    } else {
+      showToast(result.mensagem,'error');
+    }
+  })
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao carregar produtos!','error');})
+  .getProdutos();
+}
+
+function filtrarProdutos(){
+  var inputProduto = document.getElementById('filterProduto');
+  var texto = inputProduto ? inputProduto.value.toLowerCase().trim() : '';
+  var categoria=document.getElementById('filterCategoria').value;
+  var subcategoria=document.getElementById('filterSubcategoria').value;
+  var estabelecimento=document.getElementById('filterEstabelecimento').value;
+  var fornecedor=document.getElementById('filterFornecedor').value;
+  var status=document.getElementById('filterStatus').value;
+  var filtrados=produtosCache.filter(function(p){
+    if(texto && !p.produto.toLowerCase().includes(texto)) return false;
+    if(categoria&&p.categoria!==categoria) return false;
+    if(subcategoria&&p.subcategoria!==subcategoria) return false;
+    if(estabelecimento&&p.estabelecimento!==estabelecimento) return false;
+    if(fornecedor&&p.fornecedor!==fornecedor) return false;
+    if(status&&p.status!==status) return false;
+    return true;
+  });
+  var totalFiltroEl=document.getElementById('totalFiltroEstoque');
+  if(totalFiltroEl)totalFiltroEl.innerHTML='<i class="fas fa-filter"></i> Total filtro: '+filtrados.length;
+  renderizarTabelaProdutos(filtrados);
+}
+
+function renderizarTabelaProdutos(produtos){
+  var tbody=document.getElementById('tbodyProdutos');
+  var empty=document.getElementById('emptyProdutos');
+  if(produtos.length===0){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var podeEditar = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel !== 'VIEW' && usuarioLogado.permissoes.Estoque.nivel !== 'NONE';
+  var podeExcluir = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel === 'FULL';
+  tbody.innerHTML=produtos.map(function(p){
+    try{
+      var acoes = '';
+      if(podeEditar){
+        acoes += '<button class="btn-sm btn-edit" data-action="edit" data-linha="'+p.linha+'"><i class="fas fa-edit"></i></button>';
+      }
+      if(podeExcluir){
+        acoes += '<button class="btn-sm btn-delete" data-action="delete" data-linha="'+p.linha+'"><i class="fas fa-trash"></i></button>';
+      }
+      var quebraAtual = p.quebra==='Sim'?'Sim':'Não';
+      var resolvidoAtual = p.resolvido==='Sim'?'Sim':'Não';
+      var acoesRapidas = '<div class="quick-actions">'+
+        '<div class="quick-action-item"><span class="quick-action-label">Rebaixa</span>'+
+        '<button type="button" class="btn-toggle '+(quebraAtual==='Sim'?'toggle-sim':'toggle-nao')+'" data-tipo="quebra" data-linha="'+p.linha+'" data-valor="'+quebraAtual+'" '+(podeEditar?'':'disabled')+'>'+quebraAtual+'</button></div>'+
+        '<div class="quick-action-item"><span class="quick-action-label">Resolvido</span>'+
+        '<button type="button" class="btn-toggle '+(resolvidoAtual==='Sim'?'toggle-sim':'toggle-nao')+'" data-tipo="resolvido" data-linha="'+p.linha+'" data-valor="'+resolvidoAtual+'" '+(podeEditar?'':'disabled')+'>'+resolvidoAtual+'</button></div>'+
+        '</div>';
+      return'<tr>'+
+        '<td data-label="Código"><strong>'+p.codigo+'</strong></td>'+
+        '<td data-label="Produto">'+(p.produto||'-')+'</td>'+
+        '<td data-label="Qtd">'+p.quantidade+'</td>'+
+        '<td data-label="Validade">'+formatarData(p.dataValidade)+'</td>'+
+        '<td data-label="Dias">'+(p.diasRestantes!==null?p.diasRestantes+' dias':'-')+'</td>'+
+        '<td data-label="Status">'+getStatusLabel(p.status)+'</td>'+
+        '<td data-label="Ações Rápidas">'+acoesRapidas+'</td>'+
+        '<td data-label="Categoria">'+(p.categoria||'-')+'</td>'+
+        '<td data-label="Subcategoria">'+(p.subcategoria||'-')+'</td>'+
+        '<td data-label="Custo">'+formatarMoeda(p.precoCusto)+'</td>'+
+        '<td data-label="Venda">'+formatarMoeda(p.precoVenda)+'</td>'+
+        '<td data-label="Fornecedor">'+(p.fornecedor||'-')+'</td>'+
+        '<td data-label="Nome da loja">'+(p.estabelecimento||'-')+'</td>'+
+        '<td data-label="Cadastrado Por">'+(p.cadastradoPor||'-')+'</td>'+
+        '<td data-label="Data Cadastro">'+(p.dataCadastro||'-')+'</td>'+
+        '<td data-label="Ações"><div class="actions">'+acoes+'</div></td>'+
+        '</tr>';
+    }catch(errLinha){
+      console.error('Falha ao renderizar produto da linha '+p.linha+' (verifique os dados desse item na planilha Estoque):',errLinha,p);
+      return'';
+    }
+  }).join('');
+}
+
+// ========== ATUALIZAÇÃO DAS AÇÕES RÁPIDAS: REBAIXA E RESOLVIDO ==========
+function alterarStatusInline(linha, tipo, novoValor, toggleEl, valorAnterior){
+  if(!verificarAcao('update','Estoque')){
+    if(toggleEl){reverterToggle(toggleEl,valorAnterior);}
+    return;
+  }
+  var produto=produtosCache.find(function(p){return p.linha===linha;});
+  if(!produto){if(toggleEl){reverterToggle(toggleEl,valorAnterior);}return;}
+  var obj={
+    linha:linha,codigo:produto.codigo,produto:produto.produto,quantidade:produto.quantidade,
+    dataValidade:produto.dataValidade,categoria:produto.categoria,subcategoria:produto.subcategoria,
+    precoCusto:produto.precoCusto,precoVenda:produto.precoVenda,fornecedor:produto.fornecedor,
+    estabelecimento:produto.estabelecimento,
+    quebra:tipo==='quebra'?novoValor:produto.quebra,
+    resolvido:tipo==='resolvido'?novoValor:produto.resolvido
+  };
+  var mensagemCampo = tipo==='quebra' ? 'Rebaixa' : 'Resolvido';
+  google.script.run
+  .withSuccessHandler(function(result){
+    if(result.sucesso){
+      if(tipo==='quebra')produto.quebra=novoValor;
+      else produto.resolvido=novoValor;
+      showToast(mensagemCampo+' atualizado!', 'success');
+    }else{
+      showToast(result.mensagem,'error');
+      if(toggleEl){reverterToggle(toggleEl,valorAnterior);}
+    }
+  })
+  .withFailureHandler(function(error){
+    showToast('Erro ao atualizar '+mensagemCampo.toLowerCase()+'!','error');
+    if(toggleEl){reverterToggle(toggleEl,valorAnterior);}
+  })
+  .salvarProduto(obj,usuarioLogado?usuarioLogado.perfil:null);
+}
+function reverterToggle(toggleEl,valorAnterior){
+  toggleEl.setAttribute('data-valor',valorAnterior);
+  toggleEl.textContent=valorAnterior;
+  toggleEl.classList.toggle('toggle-sim',valorAnterior==='Sim');
+  toggleEl.classList.toggle('toggle-nao',valorAnterior==='Não');
+}
+
+// ========== EXCLUIR ITENS MARCADOS COMO RESOLVIDOS ==========
+function excluirResolvidos(){
+  if(!verificarAcao('delete','Estoque'))return;
+  var resolvidos = produtosCache.filter(function(p){ return p.resolvido === 'Sim'; });
+  if(resolvidos.length === 0){ showToast('Nenhum produto marcado como resolvido.','info'); return; }
+  document.getElementById('confirmacaoMensagem').textContent =
+    'Deseja excluir os itens resolvidos? (' + resolvidos.length + ' item(ns))';
+  confirmacaoTipo = 'lote';
+  document.getElementById('modalConfirmacao').classList.add('active');
+}
+
+function executarExclusaoResolvidos() {
+  showLoading('Excluindo itens resolvidos...');
+  google.script.run
+    .withSuccessHandler(function(result){
+      hideLoading();
+      fecharModalConfirmacao();
+      if(result.sucesso){
+        showToast(result.mensagem,'success');
+        carregarProdutos();
+        if(dashboardCache) carregarDashboard();
+      } else {
+        showToast(result.mensagem,'warning');
+      }
+    })
+    .withFailureHandler(function(error){
+      hideLoading();
+      fecharModalConfirmacao();
+      showToast('Erro ao excluir itens resolvidos!','error');
+    })
+    .excluirProdutosResolvidos(usuarioLogado ? usuarioLogado.perfil : null);
+}
+
+// ==================== MODAL PRODUTO ====================
+var modalProdutoCamposCompletos = true;
+function definirCamposScannerProduto(mostrarTodos){
+  modalProdutoCamposCompletos = mostrarTodos;
+  document.querySelectorAll('#formProduto .campo-scanner-oculto').forEach(function(grupo){
+    grupo.style.display = mostrarTodos ? '' : 'none';
+  });
+}
+function abrirModalProduto(resetar){
+  if(!verificarAcao('create','Estoque'))return;
+  if(resetar===undefined)resetar=true;
+  document.getElementById('modalProdutoTitle').textContent='Novo Produto';
+  definirCamposScannerProduto(true);
+  if(resetar){
+    document.getElementById('formProduto').reset();
+    document.getElementById('produtoLinha').value='';
+    document.getElementById('produtoSubcategoria').innerHTML='<option value="">Selecione...</option>';
+    document.getElementById('produtoQuebra').value='Não';
+  }
+  document.getElementById('modalProduto').classList.add('active');
+}
+function fecharModalProduto(){document.getElementById('modalProduto').classList.remove('active');}
+function abrirScannerParaProduto(){
+  scannerTarget='produto';
+  fecharModalProduto();
+  document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+  document.querySelector('.nav-item[data-page="scanner"]').classList.add('active');
+  document.querySelectorAll('.page-section').forEach(function(s){s.classList.remove('active');});
+  document.getElementById('pageScanner').classList.add('active');
+  initScannerPage();
+}
+function editarProduto(linha){
+  if(!verificarAcao('update','Estoque'))return;
+  var produto=produtosCache.find(function(p){return p.linha===linha;});
+  if(!produto)return;
+  document.getElementById('modalProdutoTitle').textContent='Editar Produto';
+  definirCamposScannerProduto(true);
+  document.getElementById('produtoLinha').value=produto.linha;
+  document.getElementById('produtoCodigo').value=produto.codigo;
+  document.getElementById('produtoNome').value=produto.produto||'';
+  document.getElementById('produtoQuantidade').value=produto.quantidade;
+  document.getElementById('produtoDataValidade').value=produto.dataValidade;
+  document.getElementById('produtoCategoria').value=produto.categoria||'';
+  atualizarSubcategoriasPorCategoria(produto.categoria);
+  document.getElementById('produtoSubcategoria').value=produto.subcategoria||'';
+  document.getElementById('produtoPrecoCusto').value=produto.precoCusto||'';
+  document.getElementById('produtoPrecoVenda').value=produto.precoVenda||'';
+  document.getElementById('produtoFornecedor').value=produto.fornecedor||'';
+  document.getElementById('produtoEstabelecimento').value=produto.estabelecimento||'';
+  document.getElementById('produtoQuebra').value=produto.quebra==='Sim'?'Sim':'Não';
+  document.getElementById('modalProduto').classList.add('active');
+}
+
+// ========== SALVAR PRODUTO ==========
+function salvarProduto(){
+  if(!verificarAcao(document.getElementById('produtoLinha').value?'update':'create','Estoque'))return;
+
+  var codigo = document.getElementById('produtoCodigo').value.trim();
+  var codigoValidado = validarCodigoBarras(codigo);
+  if (codigoValidado === null) return;
+
+  var produto=document.getElementById('produtoNome').value.trim();
+  var quantidade=document.getElementById('produtoQuantidade').value;
+  var dataValidade=document.getElementById('produtoDataValidade').value;
+  var categoria=document.getElementById('produtoCategoria').value;
+  var subcategoria=document.getElementById('produtoSubcategoria').value;
+  var fornecedor=document.getElementById('produtoFornecedor').value;
+  var estabelecimento=document.getElementById('produtoEstabelecimento').value;
+  var fornecedorPendente = modalProdutoCamposCompletos && !fornecedor;
+  if(!codigoValidado||!produto||!quantidade||!dataValidade||!categoria||!estabelecimento||fornecedorPendente){
+    showToast('Preencha todos os campos obrigatórios!','error');return;
+  }
+  var linhaAtual=document.getElementById('produtoLinha').value;
+  var produtoExistente=linhaAtual?produtosCache.find(function(p){return p.linha===parseInt(linhaAtual);}):null;
+
+  var obj = {
+    linha: linhaAtual || null,
+    codigo: codigoValidado,
+    produto: produto,
+    quantidade: parseInt(quantidade),
+    dataValidade: dataValidade,
+    categoria: categoria,
+    subcategoria: subcategoria,
+    precoCusto: parseFloat(document.getElementById('produtoPrecoCusto').value) || 0,
+    precoVenda: parseFloat(document.getElementById('produtoPrecoVenda').value) || 0,
+    fornecedor: fornecedor,
+    estabelecimento: estabelecimento,
+    quebra: document.getElementById('produtoQuebra').value === 'Sim' ? 'Sim' : 'Não',
+    resolvido: produtoExistente ? produtoExistente.resolvido : 'Não',
+    cadastradoPor: (usuarioLogado && usuarioLogado.nome) ? usuarioLogado.nome : '',
+    funcao: (usuarioLogado && usuarioLogado.setor) ? usuarioLogado.setor : ''
+  };
+
+  showLoading('Salvando produto...');
+  google.script.run
+  .withSuccessHandler(function(result){
+    hideLoading();
+    if(result.sucesso){
+      fecharModalProduto();
+      showToast(result.mensagem,'success');
+      carregarProdutos();
+      if(dashboardCache) carregarDashboard();
+    }else{
+      showToast(result.mensagem,'error');
+      var campoCodigo=document.getElementById('produtoCodigo');
+      campoCodigo.value='';
+      campoCodigo.focus();
+    }
+  })
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar produto!','error');})
+  .salvarProduto(obj, usuarioLogado ? usuarioLogado.perfil : null);
+}
+
+// ==================== EXCLUSÃO ====================
+function excluirProduto(linha){
+  if(!verificarAcao('delete','Estoque'))return;
+  linhaExcluir=linha;
+  document.getElementById('confirmacaoMensagem').textContent = 'Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.';
+  confirmacaoTipo = null;
+  document.getElementById('modalConfirmacao').classList.add('active');
+}
+function fecharModalConfirmacao(){linhaExcluir=null;confirmacaoTipo=null;document.getElementById('modalConfirmacao').classList.remove('active');}
+function confirmarExclusao(){
+  if(!linhaExcluir) return;
+  showLoading('Excluindo produto...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();fecharModalConfirmacao();if(result.sucesso){showToast(result.mensagem,'success');carregarProdutos();if(dashboardCache) carregarDashboard();}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();fecharModalConfirmacao();showToast('Erro ao excluir produto!','error');})
+  .excluirProduto(linhaExcluir,usuarioLogado?usuarioLogado.perfil:null);
+}
+
+// ==================== RELATÓRIOS ====================
+function gerarRelatorio(){
+  if(!verificarAcao('view','Relatorios'))return;
+  var tipo=document.getElementById('relatorioTipo').value;
+  var dias=document.getElementById('relatorioDias').value;
+  var categoria=document.getElementById('filterRelCategoria').value;
+  var subcategoria=document.getElementById('filterRelSubcategoria').value;
+  var estabelecimento=document.getElementById('filterRelEstabelecimento').value;
+  var fornecedor=document.getElementById('filterRelFornecedor').value;
+  document.getElementById('grupoDias').style.display=tipo==='proximos'?'flex':'none';
+  showLoading('Gerando relatório...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){renderizarRelatorio(result.produtos,tipo);}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao gerar relatório!','error');})
+  .gerarRelatorio(tipo,parseInt(dias),categoria,subcategoria,estabelecimento,fornecedor);
+}
+function renderizarRelatorio(produtos,tipo){
+  var tbody=document.getElementById('tbodyRelatorio');
+  var empty=document.getElementById('emptyRelatorio');
+  if(produtos.length===0){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  tbody.innerHTML=produtos.map(function(p){
+    return'<tr><td><strong>'+p.codigo+'</strong></td><td>'+(p.produto||'-')+'</td><td>'+p.quantidade+'</td><td>'+formatarData(p.dataValidade)+'</td><td>'+(p.diasRestantes!==null?p.diasRestantes+' dias':'-')+'</td><td>'+getStatusLabel(p.status)+'</td><td>'+(p.categoria||'-')+'</td><td>'+(p.subcategoria||'-')+'</td><td>'+formatarMoeda(p.precoCusto)+'</td><td>'+formatarMoeda(p.precoVenda)+'</td><td>'+(p.fornecedor||'-')+'</td><td>'+(p.estabelecimento||'-')+'</td><td>'+getSugestao(p)+'</td></tr>';
+  }).join('');
+}
+function exportarRelatorio(){
+  if(!verificarAcao('view','Relatorios'))return;
+  var tipo=document.getElementById('relatorioTipo').value;
+  var dias=document.getElementById('relatorioDias').value;
+  var categoria=document.getElementById('filterRelCategoria').value;
+  var subcategoria=document.getElementById('filterRelSubcategoria').value;
+  var estabelecimento=document.getElementById('filterRelEstabelecimento').value;
+  var fornecedor=document.getElementById('filterRelFornecedor').value;
+  showLoading('Exportando CSV...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){var blob=new Blob([result.csv],{type:'text/csv;charset=utf-8;'});var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='relatorio_'+tipo+'_'+new Date().toISOString().split('T')[0]+'.csv';link.click();showToast('Relatório CSV exportado com sucesso! ('+result.total+' registros)','success');}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao exportar CSV!','error');})
+  .exportarRelatorioCSV(tipo,parseInt(dias),categoria,subcategoria,estabelecimento,fornecedor);
+}
+function exportarRelatorioPDF(){
+  if(!verificarAcao('view','Relatorios'))return;
+  var tipo=document.getElementById('relatorioTipo').value;
+  var dias=document.getElementById('relatorioDias').value;
+  var categoria=document.getElementById('filterRelCategoria').value;
+  var subcategoria=document.getElementById('filterRelSubcategoria').value;
+  var estabelecimento=document.getElementById('filterRelEstabelecimento').value;
+  var fornecedor=document.getElementById('filterRelFornecedor').value;
+  showLoading('Gerando PDF...');
+  google.script.run
+  .withSuccessHandler(function(result){hideLoading();if(result.sucesso){var byteCharacters=atob(result.pdf);var byteNumbers=new Array(byteCharacters.length);for(var i=0;i<byteCharacters.length;i++){byteNumbers[i]=byteCharacters.charCodeAt(i);}var byteArray=new Uint8Array(byteNumbers);var blob=new Blob([byteArray],{type:'application/pdf'});var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='relatorio_'+tipo+'_'+new Date().toISOString().split('T')[0]+'.pdf';link.click();showToast('Relatório PDF exportado com sucesso! ('+result.total+' registros)','success');}else{showToast(result.mensagem,'error');}})
+  .withFailureHandler(function(error){hideLoading();showToast('Erro ao exportar PDF!','error');})
+  .exportarRelatorioPDF(tipo,parseInt(dias),categoria,subcategoria,estabelecimento,fornecedor);
+}
+
+// ==================== SCANNER ====================
+function atualizarSaudacaoScanner(){
+  var elNome = document.getElementById('scannerSaudacaoNome');
+  if (elNome) elNome.textContent = (usuarioLogado && usuarioLogado.nome) ? usuarioLogado.nome : 'Usuário';
+}
+function atualizarStatsScanner(){
+  var elHoje = document.getElementById('scannerStatHoje');
+  var elMes = document.getElementById('scannerStatMes');
+  if (!elHoje || !elMes) return;
+  var agora = new Date();
+  var diaAtual = agora.getDate();
+  var mesAtual = agora.getMonth();
+  var anoAtual = agora.getFullYear();
+  var totalHoje = 0, totalMes = 0;
+  (produtosCache || []).forEach(function(p){
+    if (!p.dataCadastro) return;
+    var partesData = p.dataCadastro.split(' ')[0].split('/');
+    if (partesData.length !== 3) return;
+    var dia = parseInt(partesData[0], 10);
+    var mes = parseInt(partesData[1], 10) - 1;
+    var ano = parseInt(partesData[2], 10);
+    if (ano === anoAtual && mes === mesAtual) {
+      totalMes++;
+      if (dia === diaAtual) totalHoje++;
+    }
+  });
+  elHoje.textContent = totalHoje;
+  elMes.textContent = totalMes;
+}
+
+function inicializarTecladoScanner() {
+  var display = document.getElementById('scannerDisplay');
+  if (!display) return;
+  display.textContent = '';
+  var inputManual = document.getElementById('scannerInputManual');
+  if (inputManual) inputManual.value = '';
+  var painelManual = document.getElementById('scannerManualPanel');
+  if (painelManual) painelManual.style.display = 'none';
+
+  document.querySelectorAll('.numpad-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      var value = this.getAttribute('data-value');
+      if (value === 'ok') {
+        var codigo = display.textContent.trim();
+        if (!codigo) {
+          showToast('Digite ou insira um código de barras.', 'warning');
+          return;
+        }
+        emitirBeep();
+        executarScanManual();
+        return;
+      }
+      if (value === 'apagar') {
+        var atual = display.textContent;
+        display.textContent = atual.slice(0, -1);
+      } else if (value === 'limpar') {
+        display.textContent = '';
+      } else {
+        var atual2 = display.textContent;
+        if (atual2.length < 30) {
+          display.textContent = atual2 + value;
+        }
+      }
+      if (inputManual) inputManual.value = display.textContent;
+    });
+  });
+
+  if (inputManual) {
+    inputManual.addEventListener('input', function() {
+      var apenasNumeros = inputManual.value.replace(/[^0-9]/g, '');
+      if (apenasNumeros !== inputManual.value) inputManual.value = apenasNumeros;
+      display.textContent = apenasNumeros;
+    });
+    inputManual.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var codigo = display.textContent.trim();
+        if (!codigo) {
+          showToast('Digite um código de barras.', 'warning');
+          return;
+        }
+        emitirBeep();
+        executarScanManual();
+      }
+    });
+  }
+
+  // ===== LISTENER GLOBAL CORRIGIDO =====
+  document.addEventListener('keydown', function(e) {
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) {
+      return;
+    }
+    if (e.key >= '0' && e.key <= '9') {
+      var display = document.getElementById('scannerDisplay');
+      if (display.textContent.length < 30) {
+        display.textContent += e.key;
+      }
+      e.preventDefault();
+    } else if (e.key === 'Backspace') {
+      var display = document.getElementById('scannerDisplay');
+      display.textContent = display.textContent.slice(0, -1);
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      var display = document.getElementById('scannerDisplay');
+      var codigo = display.textContent.trim();
+      if (codigo) {
+        emitirBeep();
+        executarScanManual();
+      }
+      e.preventDefault();
+    }
+  });
+}
+
+var janelaScannerExterna = null;
+
+function abrirCameraExterna() {
+  var url = SCANNER_EXTERNO_URL;
+  var returnUrl = encodeURIComponent(window.location.href);
+  url += (url.includes('?') ? '&' : '?') + 'returnUrl=' + returnUrl;
+  janelaScannerExterna = window.open(url, '_blank', 'width=420,height=650');
+}
+
+function ativarPaginaScannerComCodigo(codigo) {
+  var navItem = document.querySelector('.nav-item[data-page="scanner"]');
+  if (!navItem || navItem.classList.contains('no-access')) {
+    console.error('NavItem Scanner não encontrado ou sem acesso');
+    return;
+  }
+  document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
+  navItem.classList.add('active');
+  document.querySelectorAll('.page-section').forEach(function(s){ s.classList.remove('active'); });
+  var pageScanner = document.getElementById('pageScanner');
+  if (!pageScanner) {
+    console.error('Elemento pageScanner não encontrado');
+    return;
+  }
+  pageScanner.classList.add('active');
+  initScannerPage(codigo);
+}
+
+var SCANNER_EXTERNO_ORIGEM = 'https://wagnerbuttarelli.github.io';
+
+window.addEventListener('message', function(event) {
+  if (event.origin !== SCANNER_EXTERNO_ORIGEM) return;
+  var dados = event.data;
+  if (dados && dados.tipo === 'codigoBarrasDetectado' && dados.codigo) {
+    window.focus();
+    ativarPaginaScannerComCodigo(String(dados.codigo).trim());
+    if (janelaScannerExterna && !janelaScannerExterna.closed) {
+      janelaScannerExterna.close();
+    }
+  }
+});
+
+function verificarCodigoNaURL() {
+  var params = new URLSearchParams(window.location.search);
+  var codigo = params.get('codigo');
+  if (codigo) {
+    console.log('Código detectado na URL:', codigo);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    ativarPaginaScannerComCodigo(codigo);
+  }
+}
+
+function initScannerPage(codigoParam) {
+  if (!verificarAcao('view', 'Scanner')) {
+    console.warn('Sem permissão para Scanner');
+    return;
+  }
+  inicializarTecladoScanner();
+  atualizarSaudacaoScanner();
+  atualizarStatsScanner();
+
+  var codigo = codigoParam || null;
+  if (codigo) {
+    console.log('Processando código via initScannerPage:', codigo);
+    emitirBeep();
+    var display = document.getElementById('scannerDisplay');
+    if (display) {
+      display.textContent = codigo;
+    }
+    setTimeout(function(){
+      executarScanManual();
+    }, 800);
+  }
+}
+
+function executarScanManual(){
+  var display=document.getElementById('scannerDisplay');
+  var codigo=display?display.textContent.trim():'';
+  var codigoValidado = validarCodigoBarras(codigo);
+  if (codigoValidado === null) return;
+
+  showLoading('Buscando informações do produto...');
+  google.script.run
+  .withSuccessHandler(function(resposta){
+    hideLoading();
+    if(resposta.sucesso){
+      ultimoCodigoScanner=resposta.codigo;
+      ultimoNomeScanner=(resposta.descricao&&resposta.descricao!=='Não localizado na internet'&&resposta.descricao.indexOf('Erro')!==0&&resposta.descricao.indexOf('Não localizado')!==0)?resposta.descricao:'';
+      var ultimaCategoria = resposta.categoria || '';
+      var ultimaSubcategoria = resposta.subcategoria || '';
+
+      // Navega para a página Estoque
+      document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+      document.querySelector('.nav-item[data-page="estoque"]').classList.add('active');
+      document.querySelectorAll('.page-section').forEach(function(s){s.classList.remove('active');});
+      document.getElementById('pageEstoque').classList.add('active');
+
+      document.getElementById('produtoCodigo').value=resposta.codigo;
+      document.getElementById('produtoNome').value=ultimoNomeScanner;
+      if(ultimaCategoria){
+        document.getElementById('produtoCategoria').value=ultimaCategoria;
+        atualizarSubcategoriasPorCategoria(ultimaCategoria);
+        document.getElementById('produtoSubcategoria').value=ultimaSubcategoria||'';
+      }else{
+        document.getElementById('produtoCategoria').value='';
+        document.getElementById('produtoSubcategoria').innerHTML='<option value="">Selecione...</option>';
+      }
+      if(usuarioLogado && usuarioLogado.loja){
+        document.getElementById('produtoEstabelecimento').value=usuarioLogado.loja;
+      }
+      document.getElementById('produtoQuantidade').value='';
+      document.getElementById('produtoDataValidade').value='';
+      document.getElementById('produtoPrecoCusto').value='';
+      document.getElementById('produtoPrecoVenda').value='';
+      document.getElementById('produtoFornecedor').value='';
+      document.getElementById('produtoLinha').value='';
+      document.getElementById('produtoQuebra').value='Não';
+      document.getElementById('modalProdutoTitle').textContent='Novo Produto (via Scanner)';
+      definirCamposScannerProduto(false);
+
+      document.getElementById('modalProduto').classList.add('active');
+
+      setTimeout(function() {
+        document.getElementById('produtoQuantidade').focus();
+      }, 300);
+
+      showToast('Código detectado! Preencha os campos obrigatórios.', 'success');
+    }else{
+      showToast('Erro ao processar código: '+resposta.mensagem, 'error');
+    }
+  })
+  .withFailureHandler(function(err){
+    hideLoading();
+    showToast('Erro na comunicação: '+err.message, 'error');
+  })
+  .salvarDadosNoSheets(codigoValidado);
+}
+
+function carregarHistoricoScanner(){
+  var tbody=document.getElementById('tbodyHistoricoScanner');
+  if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="5" class="empty-state">Carregando histórico...</td></tr>';
+  google.script.run
+  .withSuccessHandler(function(dados){renderizarTabelaHistoricoScanner(dados);})
+  .withFailureHandler(function(err){tbody.innerHTML='<tr><td colspan="5" class="empty-state">Erro ao carregar</td></tr>';})
+  .obterUltimasPesquisas();
+}
+function renderizarTabelaHistoricoScanner(dados){
+  var tbody=document.getElementById('tbodyHistoricoScanner');
+  tbody.innerHTML='';
+  if(!dados||!Array.isArray(dados)||dados.length===0){
+    tbody.innerHTML='<tr><td colspan="5" class="empty-state">Nenhum registro encontrado no histórico. Faça uma pesquisa para começar.</td></tr>';
+    return;
+  }
+  var headers=['Data/Hora','Código','Descrição','Quantidade','Data Validade'];
+  dados.forEach(function(linha,idx){
+    if(!linha||!Array.isArray(linha))return;
+    var tr=document.createElement('tr');
+    linha.forEach(function(coluna,index){
+      var td=document.createElement('td');
+      td.setAttribute('data-label',headers[index]);
+      td.textContent=(coluna!==null&&coluna!==undefined&&coluna!=='')?String(coluna):'N/A';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  if(tbody.children.length===0){
+    tbody.innerHTML='<tr><td colspan="5" class="empty-state">Nenhum registro válido encontrado.</td></tr>';
+  }
+}
+
+// ==================== EVENT LISTENERS ====================
+document.addEventListener('DOMContentLoaded',function(){
+  hideLoading();
+
+  // Listener para o campo de pesquisa de produto (input ao invés de change)
+  document.getElementById('filterProduto').addEventListener('input', filtrarProdutos);
+
+  document.getElementById('filterCategoria').addEventListener('change',function(){preencherSelectSubcategoriasPorCategoria('filterSubcategoria',this.value);filtrarProdutos();});
+  document.getElementById('filterSubcategoria').addEventListener('change',filtrarProdutos);
+  document.getElementById('filterEstabelecimento').addEventListener('change',filtrarProdutos);
+  document.getElementById('filterFornecedor').addEventListener('change',filtrarProdutos);
+  document.getElementById('filterStatus').addEventListener('change',filtrarProdutos);
+  document.getElementById('btnNovoProduto').addEventListener('click',function(){abrirModalProduto(true);});
+  document.getElementById('btnNovaCategoria').addEventListener('click',function(){abrirModalCadastro('categoria');});
+  document.getElementById('btnNovaSubcategoria').addEventListener('click',function(){abrirModalCadastro('subcategoria');});
+  document.getElementById('btnNovoEstabelecimento').addEventListener('click',function(){abrirModalCadastro('estabelecimento');});
+  document.getElementById('btnNovoFornecedor').addEventListener('click',function(){abrirModalCadastro('fornecedor');});
+  document.getElementById('btnFecharModalProduto').addEventListener('click',fecharModalProduto);
+  document.getElementById('btnCancelarProduto').addEventListener('click',fecharModalProduto);
+  document.getElementById('btnSalvarProduto').addEventListener('click',salvarProduto);
+  document.getElementById('btnScanProduto').addEventListener('click',abrirScannerParaProduto);
+  document.getElementById('produtoCategoria').addEventListener('change',function(){atualizarSubcategoriasPorCategoria(this.value);});
+  document.getElementById('tbodyProdutos').addEventListener('click',function(e){
+    var toggle=e.target.closest('.btn-toggle');
+    if(toggle){
+      if(toggle.disabled)return;
+      var linhaToggle=parseInt(toggle.getAttribute('data-linha'));
+      var tipo=toggle.getAttribute('data-tipo');
+      var valorAtual=toggle.getAttribute('data-valor')==='Sim'?'Sim':'Não';
+      var novoValor=valorAtual==='Sim'?'Não':'Sim';
+      toggle.setAttribute('data-valor',novoValor);
+      toggle.textContent=novoValor;
+      toggle.classList.toggle('toggle-sim',novoValor==='Sim');
+      toggle.classList.toggle('toggle-nao',novoValor==='Não');
+      alterarStatusInline(linhaToggle,tipo,novoValor,toggle,valorAtual);
+      return;
+    }
+    var btn=e.target.closest('[data-action]');
+    if(!btn)return;
+    var action=btn.getAttribute('data-action');
+    var linha=parseInt(btn.getAttribute('data-linha'));
+    if(action==='edit')editarProduto(linha);
+    else if(action==='delete')excluirProduto(linha);
+  });
+  document.getElementById('btnExcluirResolvidos').addEventListener('click',excluirResolvidos);
+  document.getElementById('btnFecharModalCadastro').addEventListener('click',fecharModalCadastro);
+  document.getElementById('btnFecharCadastro').addEventListener('click',fecharModalCadastro);
+  document.getElementById('btnCancelarEdicaoCadastro').addEventListener('click',cancelarEdicaoCadastro);
+  document.getElementById('btnSalvarCadastro').addEventListener('click',salvarCadastro);
+  // ===== CORREÇÃO ITEM 28b: listener delegado para Editar/Excluir da lista de Categoria/
+  // Subcategoria/Loja/Fornecedor (ver comentário na função abrirModalCadastro) =====
+  document.getElementById('cadastroLista').addEventListener('click',function(e){
+    var btn=e.target.closest('[data-action]');
+    if(!btn)return;
+    var action=btn.getAttribute('data-action');
+    var tipo=btn.getAttribute('data-tipo');
+    var v1=btn.getAttribute('data-v1')||'';
+    var v2=btn.getAttribute('data-v2')||'';
+    if(action==='editar-cadastro')editarCadastroItemAbrir(tipo,v1,v2);
+    else if(action==='excluir-cadastro')excluirCadastroItem(tipo,v1,v2);
+  });
+  // ===== FIM CORREÇÃO ITEM 28b =====
+  document.getElementById('btnFecharConfirmacao').addEventListener('click',fecharModalConfirmacao);
+  document.getElementById('btnCancelarExclusao').addEventListener('click',fecharModalConfirmacao);
+  document.getElementById('btnConfirmarExclusao').addEventListener('click', function() {
+    if (confirmacaoTipo === 'lote') {
+      confirmacaoTipo = null;
+      executarExclusaoResolvidos();
+    } else {
+      confirmarExclusao();
+    }
+  });
+  document.getElementById('relatorioTipo').addEventListener('change',gerarRelatorio);
+  document.getElementById('relatorioDias').addEventListener('change',gerarRelatorio);
+  document.getElementById('filterRelCategoria').addEventListener('change',function(){preencherSelectSubcategoriasPorCategoria('filterRelSubcategoria',this.value);gerarRelatorio();});
+  document.getElementById('filterRelSubcategoria').addEventListener('change',gerarRelatorio);
+  document.getElementById('filterRelEstabelecimento').addEventListener('change',gerarRelatorio);
+  document.getElementById('filterRelFornecedor').addEventListener('change',gerarRelatorio);
+  document.getElementById('btnExportCSV').addEventListener('click',exportarRelatorio);
+  document.getElementById('btnExportPDF').addEventListener('click',exportarRelatorioPDF);
+
+  document.getElementById('btnAbrirCameraExterna').addEventListener('click', abrirCameraExterna);
+
+  document.getElementById('btnToggleManual').addEventListener('click', function() {
+    var painel = document.getElementById('scannerManualPanel');
+    var vaiAbrir = painel.style.display === 'none' || !painel.style.display;
+    painel.style.display = vaiAbrir ? 'block' : 'none';
+    if (vaiAbrir) {
+      var inputManual = document.getElementById('scannerInputManual');
+      if (inputManual) {
+        setTimeout(function(){ inputManual.focus(); }, 100);
+      }
+    }
+  });
+
+  var btnCadastrarEstoque = document.getElementById('btnCadastrarEstoque');
+  if (btnCadastrarEstoque) {
+    btnCadastrarEstoque.addEventListener('click', function(){
+      var display = document.getElementById('scannerDisplay');
+      var codigo = display.textContent.trim();
+      if (codigo) {
+        executarScanManual();
+      } else {
+        showToast('Nenhum código para cadastrar.','error');
+      }
+    });
+  }
+
+  document.getElementById('btnNovoPerfil').addEventListener('click',abrirModalPerfil);
+  document.getElementById('btnFecharModalPerfil').addEventListener('click',fecharModalPerfil);
+  document.getElementById('btnCancelarPerfil').addEventListener('click',fecharModalPerfil);
+  document.getElementById('btnSalvarPerfil').addEventListener('click',salvarPerfilFront);
+  document.getElementById('tbodyPerfis').addEventListener('click',function(e){
+    var btn=e.target.closest('[data-action]');
+    if(!btn)return;
+    var action=btn.getAttribute('data-action');
+    var linha=parseInt(btn.getAttribute('data-linha'));
+    if(action==='edit-perfil')editarPerfil(linha);
+    else if(action==='delete-perfil')excluirPerfilFront(linha);
+  });
+  document.getElementById('btnNovoUsuario').addEventListener('click',abrirModalUsuario);
+  document.getElementById('btnFecharModalUsuario').addEventListener('click',fecharModalUsuario);
+  document.getElementById('btnCancelarUsuario').addEventListener('click',fecharModalUsuario);
+  document.getElementById('btnSalvarUsuario').addEventListener('click',salvarUsuarioFront);
+  document.getElementById('tbodyUsuarios').addEventListener('click',function(e){
+    var btn=e.target.closest('[data-action]');
+    if(!btn)return;
+    var action=btn.getAttribute('data-action');
+    var linha=parseInt(btn.getAttribute('data-linha'));
+    if(action==='edit-usuario')editarUsuario(linha);
+    else if(action==='delete-usuario')excluirUsuarioFront(linha);
+  });
+
+  verificarCodigoNaURL();
+  carregarHistoricoScanner();
+});
+})();
+</script>
