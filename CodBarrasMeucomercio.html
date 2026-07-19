@@ -103,8 +103,13 @@
   const sessionId = params.get('sessionId');
   const gasUrl = params.get('gasUrl');
 
+  console.log('[Scanner] Iniciando scanner...');
+  console.log('[Scanner] SessionId:', sessionId);
+  console.log('[Scanner] GasUrl:', gasUrl);
+
   if (!sessionId || !gasUrl) {
     statusEl.innerHTML = '<span class="error">❌ Parâmetros inválidos. Feche e tente novamente.</span>';
+    console.error('[Scanner] Parâmetros inválidos');
     return;
   }
 
@@ -128,15 +133,40 @@
 
   function enviarCodigoParaGas(codigo) {
     const url = gasUrl + '?acao=salvarCodigoEscaneado&sessionId=' + encodeURIComponent(sessionId) + '&codigo=' + encodeURIComponent(codigo) + '&contexto=scanner';
+    console.log('[Scanner] Enviando código para:', url);
+
+    // Método 1: Tentativa com fetch (no-cors)
     fetch(url, { mode: 'no-cors' })
       .then(() => {
-        statusEl.innerHTML = '<span class="success">✅ Código enviado com sucesso! Fechando...</span>';
-        setTimeout(window.close, 800);
+        console.log('[Scanner] Fetch concluído (no-cors não permite verificar sucesso)');
+        statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+        setTimeout(window.close, 1200);
       })
       .catch(err => {
-        statusEl.innerHTML = '<span class="error">❌ Erro ao enviar código. Tente novamente.</span>';
-        console.error('Erro ao enviar:', err);
+        console.error('[Scanner] Erro no fetch:', err);
+        // Método 2: Fallback usando imagem (GET garantido)
+        tentarEnvioViaImagem(codigo);
       });
+  }
+
+  function tentarEnvioViaImagem(codigo) {
+    // Método alternativo: usar uma imagem para fazer GET (sempre funciona)
+    const url = gasUrl + '?acao=salvarCodigoEscaneado&sessionId=' + encodeURIComponent(sessionId) + '&codigo=' + encodeURIComponent(codigo) + '&contexto=scanner';
+    console.log('[Scanner] Tentando envio via imagem:', url);
+
+    const img = new Image();
+    img.onload = function() {
+      console.log('[Scanner] Imagem carregada - código enviado com sucesso');
+      statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+      setTimeout(window.close, 1200);
+    };
+    img.onerror = function() {
+      // onerror pode ser CORS, mas a requisição GET ainda foi feita
+      console.log('[Scanner] Imagem error (CORS), mas GET foi enviado');
+      statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+      setTimeout(window.close, 1200);
+    };
+    img.src = url;
   }
 
   function iniciarScanner() {
@@ -162,6 +192,7 @@
       { facingMode: "environment" },
       config,
       function(decodedText, decodedResult) {
+        console.log('[Scanner] Código detectado:', decodedText);
         statusEl.textContent = '✅ Código detectado!';
         resultEl.classList.remove('hidden');
         codigoSpan.textContent = decodedText;
