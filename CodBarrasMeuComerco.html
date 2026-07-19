@@ -99,9 +99,8 @@
 
   // Obtém parâmetros da URL
   const params = new URLSearchParams(window.location.search);
-  const returnUrl = params.get('returnUrl') || ''; // URL do GAS (opcional, mas não usaremos)
   const sessionId = params.get('sessionId');
-  const gasUrl = params.get('gasUrl'); // URL do GAS (ex: https://script.google.com/macros/s/.../exec)
+  const gasUrl = params.get('gasUrl');
 
   if (!sessionId || !gasUrl) {
     statusEl.innerHTML = '<span class="error">❌ Parâmetros inválidos. Feche e tente novamente.</span>';
@@ -128,9 +127,8 @@
   }
 
   function enviarCodigoParaGas(codigo) {
-    // Chama a rota salvarCodigoEscaneado do GAS
     const url = gasUrl + '?acao=salvarCodigoEscaneado&sessionId=' + encodeURIComponent(sessionId) + '&codigo=' + encodeURIComponent(codigo) + '&contexto=scanner';
-    fetch(url, { mode: 'no-cors' }) // não podemos ler a resposta, mas a requisição é enviada
+    fetch(url, { mode: 'no-cors' })
       .then(() => {
         statusEl.innerHTML = '<span class="success">✅ Código enviado com sucesso! Fechando...</span>';
         setTimeout(window.close, 800);
@@ -164,25 +162,21 @@
       { facingMode: "environment" },
       config,
       function(decodedText, decodedResult) {
-        // Sucesso na leitura
         codigoDetectado = decodedText;
         statusEl.textContent = '✅ Código detectado!';
         resultEl.classList.remove('hidden');
         codigoSpan.textContent = decodedText;
         emitirBeep();
 
-        // Para a câmera
         if (html5QrCode) {
           html5QrCode.stop().then(() => {
             console.log('Leitura concluída, câmera parada.');
           }).catch(err => console.warn('Erro ao parar câmera:', err));
         }
 
-        // Envia o código para o GAS
         enviarCodigoParaGas(decodedText);
       },
       function(errorMessage) {
-        // Ignora erros de leitura contínua
         if (statusEl.textContent === 'Aguardando permissão da câmera...') {
           statusEl.textContent = '📸 Aponte para o código de barras...';
         }
@@ -193,14 +187,12 @@
     });
   }
 
-  // Verifica se o navegador suporta getUserMedia
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     iniciarScanner();
   } else {
     statusEl.innerHTML = '<span class="error">❌ Seu navegador não suporta acesso à câmera. Use a digitação manual na aplicação.</span>';
   }
 
-  // Botão fechar (volta sem código)
   btnFechar.addEventListener('click', function() {
     if (html5QrCode) {
       html5QrCode.stop().catch(() => {});
@@ -208,7 +200,6 @@
     window.close();
   });
 
-  // Se o usuário fechar a aba, tentamos parar a câmera
   window.addEventListener('beforeunload', function() {
     if (html5QrCode) {
       html5QrCode.stop().catch(() => {});
