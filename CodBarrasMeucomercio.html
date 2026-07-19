@@ -108,7 +108,6 @@
   }
 
   let html5QrCode = null;
-  let codigoDetectado = null;
 
   function emitirBeep() {
     try {
@@ -162,7 +161,6 @@
       { facingMode: "environment" },
       config,
       function(decodedText, decodedResult) {
-        codigoDetectado = decodedText;
         statusEl.textContent = '✅ Código detectado!';
         resultEl.classList.remove('hidden');
         codigoSpan.textContent = decodedText;
