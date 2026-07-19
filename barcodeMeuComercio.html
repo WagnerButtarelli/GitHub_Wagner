@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Leitor de Código de Barras</title>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { margin: 0; padding: 16px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #1a73e8; }
+        button { 
+            background: #1a73e8; color: white; border: none; padding: 12px 24px; 
+            border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; 
+            transition: background 0.2s;
+        }
+        button:active { background: #0d47a1; }
+        button:disabled { opacity: 0.6; pointer-events: none; }
+        #camera-container { 
+            position: relative; width: 100%; aspect-ratio: 4/3; 
+            background: #000; border-radius: 8px; overflow: hidden; margin: 12px 0;
+        }
+        #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            pointer-events: none;
+        }
+        #scan-line {
+            width: 80%; height: 4px; background: rgba(255, 0, 0, 0.7);
+            box-shadow: 0 0 20px red; animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { transform: translateY(-40%); }
+            100% { transform: translateY(40%); }
+        }
+        .result-box { 
+            background: #e8f0fe; padding: 12px; border-radius: 8px; 
+            margin: 12px 0; min-height: 50px;
+        }
+        .result-box .label { font-weight: bold; color: #1a73e8; }
+        .status { font-size: 14px; color: #555; margin-top: 8px; }
+        .flex-row { display: flex; gap: 10px; }
+        .flex-row button { flex: 1; }
+        .small-note { font-size: 12px; color: #888; margin-top: 8px; }
+        .config-area { background: #f0f4fa; padding: 10px; border-radius: 8px; margin-bottom: 12px; }
+        .config-area input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .config-area label { font-weight: bold; display: block; margin-bottom: 4px; }
+        .config-area .note { font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Card: Leitor de código de barras -->
+    <div class="card">
+        <h2>📷 Leitor de Código de Barras</h2>
+
+        <!-- Área de configuração: URL do GAS -->
+        <div class="config-area">
+            <label for="gas-url">🔗 URL do Google Apps Script (para salvar na planilha):</label>
+            <input type="url" id="gas-url" placeholder="https://script.google.com/macros/s/SEU_ID/exec" value="https://script.google.com/macros/s/SEU_ID/exec">
+            <div class="note">Deixe em branco se não quiser enviar para a planilha.</div>
+        </div>
+
+        <div id="camera-container">
+            <video id="video" autoplay playsinline></video>
+            <div id="overlay"><div id="scan-line"></div></div>
+        </div>
+        <button id="btn-start-camera">📸 Iniciar Câmera</button>
+        <div class="result-box" id="barcode-result">
+            <span class="label">Produto:</span> <span id="product-name">Aguardando leitura...</span><br>
+            <span class="label">Marca:</span> <span id="product-brand">-</span>
+        </div>
+        <div class="status" id="barcode-status">Clique em "Iniciar Câmera" e aponte para o código.</div>
+    </div>
+
+</div>
+
+<script>
+    (function() {
+        "use strict";
+
+        // ---------- ELEMENTOS ----------
+        const video = document.getElementById('video');
+        const btnCamera = document.getElementById('btn-start-camera');
+        const productName = document.getElementById('product-name');
+        const productBrand = document.getElementById('product-brand');
+        const barcodeStatus = document.getElementById('barcode-status');
+        const gasUrlInput = document.getElementById('gas-url');
+
+        // ---------- VARIÁVEIS ----------
+        let stream = null;
+        let barcodeDetector = null;
+        let scanInterval = null;
+        let lastProductData = null;
+
+        // ---------- FUNÇÃO DE SOM (BEEP) ----------
+        function playBeep(frequency = 800, type = 'sine', duration = 0.2) {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.frequency.value = frequency;
+                oscillator.type = type;
+                
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                
+                oscillator.start(audioCtx.currentTime);
+                oscillator.stop(audioCtx.currentTime + duration);
+
+                setTimeout(() => {
+                    if (audioCtx.state === 'running') {
+                        audioCtx.suspend();
+                    }
+                }, 500);
+                
+            } catch (e) {
+                console.log('Beep não suportado:', e);
+            }
+        }
+
+        // ---------- FUNÇÃO PARA ENVIAR AO GAS ----------
+        async function sendToGAS(productData) {
+            const url = gasUrlInput.value.trim();
+            if (!url || url === 'https://script.google.com/macros/s/SEU_ID/exec') {
+                console.warn('URL do GAS não configurada. Dados não enviados.');
+                barcodeStatus.textContent = '✅ Produto encontrado! (GAS não configurado)';
+                return;
+            }
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(productData)
+                });
+                console.log('Dados enviados para a planilha:', productData);
+                barcodeStatus.textContent = '✅ Produto enviado para a planilha!';
+            } catch (err) {
+                console.error('Erro ao enviar para o GAS:', err);
+                barcodeStatus.textContent = '⚠️ Produto lido, mas erro ao enviar para planilha.';
+            }
+        }
+
+        // ---------- FUNÇÃO DE CONSULTA AO OPEN FOOD FACTS ----------
+        async function lookupProduct(code) {
+            try {
+                const url = `https://br.openfoodfacts.org/api/v0/produto/${code}.json`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Erro ao consultar API');
+                const data = await response.json();
+
+                if (data.status === 1) {
+                    const product = data.product;
+                    const name = product.product_name || 'Nome não disponível';
+                    const brand = product.brands || 'Marca não disponível';
+                    
+                    // Toca o beep
+                    playBeep(800, 'sine', 0.2);
+
+                    // Exibe na tela
+                    productName.textContent = name;
+                    productBrand.textContent = brand;
+                    barcodeStatus.textContent = '✅ Produto encontrado! Enviando para planilha...';
+                    
+                    // Guarda e envia
+                    lastProductData = { code, name, brand, timestamp: new Date().toISOString() };
+                    await sendToGAS(lastProductData);
+
+                } else {
+                    productName.textContent = '❌ Produto não encontrado';
+                    productBrand.textContent = '-';
+                    barcodeStatus.textContent = '⚠️ Código não cadastrado no Open Food Facts.';
+                    lastProductData = null;
+                }
+            } catch (err) {
+                console.error(err);
+                productName.textContent = '❌ Erro na consulta';
+                productBrand.textContent = '-';
+                barcodeStatus.textContent = '❌ Falha ao buscar produto: ' + err.message;
+                lastProductData = null;
+            }
+        }
+
+        // ---------- LEITOR DE CÓDIGO ----------
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 640 } }
+                });
+                video.srcObject = stream;
+                await video.play();
+
+                if (!('BarcodeDetector' in window)) {
+                    barcodeStatus.textContent = '❌ Seu navegador não suporta BarcodeDetector. Use Chrome/Edge no Android.';
+                    return;
+                }
+
+                barcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar'] });
+
+                btnCamera.textContent = '⏹️ Parar Câmera';
+                barcodeStatus.textContent = '📸 Câmera ativa. Aguardando código...';
+
+                if (scanInterval) clearInterval(scanInterval);
+                scanInterval = setInterval(scanBarcode, 500);
+            } catch (err) {
+                console.error(err);
+                barcodeStatus.textContent = '❌ Erro ao acessar a câmera: ' + err.message;
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            if (scanInterval) {
+                clearInterval(scanInterval);
+                scanInterval = null;
+            }
+            btnCamera.textContent = '📸 Iniciar Câmera';
+            barcodeStatus.textContent = 'Câmera parada. Clique em "Iniciar Câmera" para recomeçar.';
+        }
+
+        async function scanBarcode() {
+            if (!barcodeDetector || !video.videoWidth) return;
+            try {
+                const barcodes = await barcodeDetector.detect(video);
+                if (barcodes.length > 0) {
+                    const code = barcodes[0].rawValue;
+                    barcodeStatus.textContent = '✅ Código lido: ' + code + ' – Buscando produto...';
+                    await lookupProduct(code);
+                }
+            } catch (err) {
+                // silencia
+            }
+        }
+
+        // ---------- EVENTOS ----------
+        btnCamera.addEventListener('click', function() {
+            if (stream && stream.active) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        });
+
+        // Salva a URL do GAS no localStorage para persistência
+        gasUrlInput.addEventListener('change', function() {
+            localStorage.setItem('gas_url', this.value);
+        });
+
+        // Restaura a URL salva
+        const savedUrl = localStorage.getItem('gas_url');
+        if (savedUrl) {
+            gasUrlInput.value = savedUrl;
+        }
+
+        // Limpeza
+        window.addEventListener('beforeunload', function() {
+            stopCamera();
+        });
+
+    })();
+</script>
+</body>
+</html>
