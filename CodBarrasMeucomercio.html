@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Leitor de Código de Barras</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      flex-direction: column;
+      padding: 20px;
+    }
+    .container {
+      background: #1a1a2e;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #00d4ff, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #reader {
+      width: 100%;
+      aspect-ratio: 1/1;
+      background: #12121a;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    #status {
+      color: #8892b0;
+      font-size: 0.9rem;
+      margin-top: 12px;
+    }
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.3s;
+      background: #00d4ff;
+      color: #0a0a0f;
+      font-size: 1rem;
+      margin-top: 12px;
+      width: 100%;
+    }
+    .btn:hover { opacity:0.8; transform:scale(0.98); }
+    .btn-secondary {
+      background: #2a2a4a;
+      color: #e0e0ff;
+    }
+    .btn-secondary:hover { background: #3a3a5a; }
+    .hidden { display: none; }
+    .scan-result {
+      background: #12121a;
+      padding: 16px;
+      border-radius: 12px;
+      margin-top: 12px;
+      word-break: break-all;
+    }
+    .scan-result strong { color: #00d4ff; }
+    .success { color: #4ade80; }
+    .error { color: #f87171; }
+  </style>
+<base target="_blank">
+</head>
+<body>
+<div class="container">
+  <h1>📷 Leitor de Código de Barras</h1>
+  <div id="reader"></div>
+  <div id="status">Aguardando permissão da câmera...</div>
+  <div id="result" class="scan-result hidden">
+    <strong>Código lido:</strong> <span id="codigoLido"></span>
+  </div>
+  <button id="btnFechar" class="btn btn-secondary">Cancelar</button>
+</div>
+
+<script>
+(function() {
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+  const codigoSpan = document.getElementById('codigoLido');
+  const btnFechar = document.getElementById('btnFechar');
+
+  // Obtém parâmetros da URL
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('sessionId');
+  const gasUrl = params.get('gasUrl');
+
+  console.log('[Scanner] Iniciando scanner...');
+  console.log('[Scanner] SessionId:', sessionId);
+  console.log('[Scanner] GasUrl:', gasUrl);
+  console.log('[Scanner] window.opener:', window.opener ? 'DISPONIVEL' : 'NAO DISPONIVEL');
+
+  if (!sessionId || !gasUrl) {
+    statusEl.innerHTML = '<span class="error">❌ Parâmetros inválidos. Feche e tente novamente.</span>';
+    console.error('[Scanner] Parâmetros inválidos');
+    return;
+  }
+
+  let html5QrCode = null;
+  let codigoJaEnviado = false;
+
+  function emitirBeep() {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.frequency.value = 880;
+      oscillator.type = 'sine';
+      gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.15);
+    } catch(e) { /* silencioso */ }
+  }
+
+  // MÉTODO 1: postMessage (mais confiável - comunicação direta entre janelas)
+  function enviarViaPostMessage(codigo) {
+    if (codigoJaEnviado) return;
+    codigoJaEnviado = true;
+
+    console.log('[Scanner] Tentando enviar via postMessage...');
+    if (window.opener) {
+      try {
+        window.opener.postMessage({
+          tipo: 'codigoBarras',
+          sessionId: sessionId,
+          codigo: codigo
+        }, '*');
+        console.log('[Scanner] postMessage enviado com sucesso');
+        statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+        setTimeout(window.close, 800);
+        return true;
+      } catch(e) {
+        console.error('[Scanner] Erro no postMessage:', e);
+      }
+    } else {
+      console.log('[Scanner] window.opener não disponível');
+    }
+    return false;
+  }
+
+  // MÉTODO 2: fetch para o GAS (salva no cache para o polling)
+  function enviarViaFetch(codigo) {
+    if (codigoJaEnviado) return;
+
+    const url = gasUrl + '?acao=salvarCodigoEscaneado&sessionId=' + encodeURIComponent(sessionId) + '&codigo=' + encodeURIComponent(codigo) + '&contexto=scanner';
+    console.log('[Scanner] Tentando enviar via fetch:', url);
+
+    fetch(url, { mode: 'no-cors' })
+      .then(() => {
+        console.log('[Scanner] Fetch concluído');
+        if (!codigoJaEnviado) {
+          codigoJaEnviado = true;
+          statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+          setTimeout(window.close, 800);
+        }
+      })
+      .catch(err => {
+        console.error('[Scanner] Erro no fetch:', err);
+        // Fallback para imagem
+        enviarViaImagem(codigo);
+      });
+  }
+
+  // MÉTODO 3: Image() como fallback (GET sempre funciona)
+  function enviarViaImagem(codigo) {
+    if (codigoJaEnviado) return;
+
+    const url = gasUrl + '?acao=salvarCodigoEscaneado&sessionId=' + encodeURIComponent(sessionId) + '&codigo=' + encodeURIComponent(codigo) + '&contexto=scanner';
+    console.log('[Scanner] Tentando envio via imagem:', url);
+
+    const img = new Image();
+    img.onload = function() {
+      console.log('[Scanner] Imagem carregada');
+      if (!codigoJaEnviado) {
+        codigoJaEnviado = true;
+        statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+        setTimeout(window.close, 800);
+      }
+    };
+    img.onerror = function() {
+      // onerror com CORS ainda significa que o GET foi feito
+      console.log('[Scanner] Imagem onerror (GET provavelmente enviado)');
+      if (!codigoJaEnviado) {
+        codigoJaEnviado = true;
+        statusEl.innerHTML = '<span class="success">✅ Código enviado! Fechando...</span>';
+        setTimeout(window.close, 800);
+      }
+    };
+    img.src = url;
+  }
+
+  // Função principal de envio: tenta postMessage primeiro, depois fetch
+  function enviarCodigo(codigo) {
+    console.log('[Scanner] Enviando código:', codigo);
+
+    // Tenta postMessage primeiro (mais confiável)
+    if (!enviarViaPostMessage(codigo)) {
+      // Se postMessage falhou, usa fetch
+      enviarViaFetch(codigo);
+    }
+  }
+
+  function iniciarScanner() {
+    if (!document.getElementById('reader')) return;
+
+    html5QrCode = new Html5Qrcode("reader");
+
+    const config = {
+      fps: 15,
+      qrbox: { width: 300, height: 300 },
+      aspectRatio: 1.0,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39
+      ]
+    };
+
+    html5QrCode.start(
+      { facingMode: "environment" },
+      config,
+      function(decodedText, decodedResult) {
+        console.log('[Scanner] Código detectado:', decodedText);
+        statusEl.textContent = '✅ Código detectado!';
+        resultEl.classList.remove('hidden');
+        codigoSpan.textContent = decodedText;
+        emitirBeep();
+
+        if (html5QrCode) {
+          html5QrCode.stop().then(() => {
+            console.log('Leitura concluída, câmera parada.');
+          }).catch(err => console.warn('Erro ao parar câmera:', err));
+        }
+
+        enviarCodigo(decodedText);
+      },
+      function(errorMessage) {
+        if (statusEl.textContent === 'Aguardando permissão da câmera...') {
+          statusEl.textContent = '📸 Aponte para o código de barras...';
+        }
+      }
+    ).catch(function(err) {
+      statusEl.innerHTML = '<span class="error">❌ Erro ao acessar câmera: ' + err.message + '</span>';
+      console.error('Erro ao iniciar scanner:', err);
+    });
+  }
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    iniciarScanner();
+  } else {
+    statusEl.innerHTML = '<span class="error">❌ Seu navegador não suporta acesso à câmera. Use a digitação manual na aplicação.</span>';
+  }
+
+  btnFechar.addEventListener('click', function() {
+    if (html5QrCode) {
+      html5QrCode.stop().catch(() => {});
+    }
+    window.close();
+  });
+
+  window.addEventListener('beforeunload', function() {
+    if (html5QrCode) {
+      html5QrCode.stop().catch(() => {});
+    }
+  });
+})();
+</script>
+</body>
+</html>
