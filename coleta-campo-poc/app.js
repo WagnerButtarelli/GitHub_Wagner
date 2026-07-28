@@ -1,5 +1,5 @@
 // ===== CONFIG =====
-const GAS_URL = 'COLE_AQUI_A_URL_DO_WEB_APP_DEPOIS_DO_DEPLOY';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyNnKGjF7jUhPPoybPna1zrdbS2mDawZHu-g3j0grJAYA_YrYDXa2_ssbs-riozePs9/exec';
 const DB_NAME = 'coletaCampoDB';
 const STORE = 'registros';
 
