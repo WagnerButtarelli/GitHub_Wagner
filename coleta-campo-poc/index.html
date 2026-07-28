@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coleta de Campo</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#007bff">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; max-width: 480px; margin: auto; }
+    #status { padding: 8px; border-radius: 6px; text-align: center; font-weight: bold; margin-bottom: 12px; }
+    .online { background: #d4edda; color: #155724; }
+    .offline { background: #f8d7da; color: #721c24; }
+    button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; }
+    #btnFoto { background: #007bff; color: white; }
+    #btnSync { background: #28a745; color: white; }
+    .item { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 6px 0; font-size: 13px; }
+    .pendente { border-left: 4px solid orange; }
+    .sincronizado { border-left: 4px solid green; opacity: .6; }
+    .erro { border-left: 4px solid red; }
+  </style>
+</head>
+<body>
+  <div id="status">Verificando...</div>
+
+  <input type="file" id="inputFoto" accept="image/*" capture="environment" style="display:none">
+  <button id="btnFoto">📷 Capturar Foto + Coordenadas</button>
+  <button id="btnSync">🔄 Sincronizar (<span id="contador">0</span> pendentes)</button>
+
+  <div id="lista"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
