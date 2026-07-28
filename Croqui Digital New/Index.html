@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Croqui Digital</title>
+    <!-- Bootstrap 5 + Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+      body {
+        background-color: #f0f4f8;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        padding-bottom: 70px;
+        overflow-x: hidden;
+      }
+      .app-container {
+        max-width: 500px;
+        margin: 0 auto;
+        background: #fff;
+        min-height: 100vh;
+        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      }
+      .page {
+        display: none;
+        padding: 15px 15px 80px 15px;
+        animation: fadeIn 0.3s;
+      }
+      .page.active { display: block; }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #ffffff;
+        border-top: 1px solid #dee2e6;
+        display: flex;
+        justify-content: space-around;
+        padding: 8px 0;
+        z-index: 1000;
+        max-width: 500px;
+        margin: 0 auto;
+      }
+      .bottom-nav .nav-item {
+        text-align: center;
+        flex: 1;
+        color: #6c757d;
+        font-size: 12px;
+        cursor: pointer;
+        transition: 0.2s;
+        border: none;
+        background: transparent;
+        padding: 4px 0;
+      }
+      .bottom-nav .nav-item i {
+        display: block;
+        font-size: 24px;
+        margin-bottom: 2px;
+      }
+      .bottom-nav .nav-item.active {
+        color: #0d6efd;
+        font-weight: bold;
+      }
+      .bottom-nav .nav-item.active i { color: #0d6efd; }
+      .card-field {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 10px;
+        border-left: 4px solid #0d6efd;
+      }
+      .btn-primary, .btn-success, .btn-danger { border-radius: 50px; padding: 10px 20px; font-weight: 600; }
+      .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 48px;
+        height: 24px;
+        margin-left: 10px;
+      }
+      .toggle-switch input { opacity: 0; width: 0; height: 0; }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+        border-radius: 24px;
+      }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+      }
+      input:checked + .slider { background-color: #0d6efd; }
+      input:checked + .slider:before { transform: translateX(24px); }
+      .lista-pontos .ponto-item {
+        background: #fff;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #e9ecef;
+      }
+      .badge-projeto {
+        background: #0d6efd;
+        color: white;
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 12px;
+      }
+      .status-offline {
+        background: #dc3545;
+        color: white;
+        border-radius: 20px;
+        padding: 2px 10px;
+        font-size: 12px;
+        display: inline-block;
+      }
+      .status-online {
+        background: #28a745;
+        color: white;
+        border-radius: 20px;
+        padding: 2px 10px;
+        font-size: 12px;
+        display: inline-block;
+      }
+      #map { height: 350px; border-radius: 12px; margin-top: 10px; }
+      .foto-thumb { max-width: 100px; max-height: 100px; border-radius: 8px; object-fit: cover; margin-top: 5px; }
+      #cameraInput { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- PÁGINA LOGIN -->
+      <div id="page-login" class="page active">
+        <div class="text-center py-5">
+          <i class="bi bi-pencil-square" style="font-size: 72px; color: #0d6efd;"></i>
+          <h2 class="mt-3">Croqui Digital</h2>
+          <p class="text-muted">Acesse com suas credenciais</p>
+        </div>
+        <div class="px-3">
+          <div class="mb-3">
+            <label class="form-label">Usuário</label>
+            <input type="text" id="loginUsuario" class="form-control" placeholder="Digite seu usuário" value="E1">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Senha</label>
+            <input type="password" id="loginSenha" class="form-control" placeholder="Digite sua senha" value="1">
+          </div>
+          <button class="btn btn-primary w-100" onclick="efetuarLogin()">Entrar</button>
+          <div id="loginMsg" class="mt-3 text-danger text-center"></div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="page">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5><i class="bi bi-house-door"></i> Início</h5>
+          <div>
+            <span id="statusConexao" class="status-online">Online</span>
+            <span class="ms-2" id="usuarioLogado"></span>
+          </div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <div class="card text-center p-3">
+              <h3 id="totalPontos">0</h3>
+              <small>Pontos coletados</small>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="card text-center p-3">
+              <h3 id="totalProjetos">0</h3>
+              <small>Projetos</small>
+            </div>
+          </div>
+        </div>
+        <div class="card p-3">
+          <h6>Últimos pontos</h6>
+          <div id="ultimosPontos" style="max-height: 300px; overflow-y: auto;"></div>
+        </div>
+        <button class="btn btn-outline-primary w-100 mt-3" onclick="sincronizarOffline()">
+          <i class="bi bi-cloud-upload"></i> Sincronizar pendentes
+        </button>
+      </div>
+
+      <!-- COLETA -->
+      <div id="page-coleta" class="page">
+        <h5><i class="bi bi-camera"></i> Coletar Ponto</h5>
+        <div class="mb-3">
+          <label>Projeto</label>
+          <input type="text" id="projetoInput" class="form-control" placeholder="Nome do projeto" required>
+        </div>
+        <button class="btn btn-success w-100" onclick="abrirCamera()">
+          <i class="bi bi-camera-fill"></i> Tirar Foto e Registrar
+        </button>
+        <input type="file" accept="image/*" capture="environment" id="cameraInput">
+        <div id="coletaStatus" class="mt-3 text-muted"></div>
+
+        <div id="formCampos" class="mt-3" style="display: none;">
+          <h6>Informações adicionais</h6>
+          <div id="camposContainer"></div>
+          <button class="btn btn-primary w-100 mt-2" onclick="confirmarColeta()">
+            <i class="bi bi-check-circle"></i> Salvar Ponto
+          </button>
+          <button class="btn btn-outline-secondary w-100 mt-1" onclick="cancelarColeta()">Cancelar</button>
+        </div>
+
+        <hr>
+        <h6>Pontos locais (offline)</h6>
+        <div id="listaPontosLocais"></div>
+      </div>
+
+      <!-- PREVIEW -->
+      <div id="page-preview" class="page">
+        <h5><i class="bi bi-map"></i> Preview</h5>
+        <div id="map"></div>
+        <div class="mt-2"><span class="badge-projeto">Clique no marcador para detalhes</span></div>
+        <div id="previewInfo" class="mt-2"></div>
+      </div>
+
+      <!-- CONFIG -->
+      <div id="page-config" class="page">
+        <h5><i class="bi bi-sliders2"></i> Configurar Campos</h5>
+        <p class="text-muted">Habilite os campos obrigatórios no formulário de coleta.</p>
+        <div id="configCamposList"></div>
+        <div class="mt-3">
+          <div class="input-group">
+            <input type="text" id="novoCampoInput" class="form-control" placeholder="Novo campo">
+            <button class="btn btn-outline-primary" onclick="adicionarCampo()">Adicionar</button>
+          </div>
+        </div>
+        <button class="btn btn-primary w-100 mt-3" onclick="salvarConfigCampos()">
+          <i class="bi bi-save"></i> Salvar Configurações
+        </button>
+      </div>
+
+      <!-- EXPORTAÇÕES -->
+      <div id="page-export" class="page">
+        <h5><i class="bi bi-file-earmark-arrow-down"></i> Exportações</h5>
+        <div class="mb-3">
+          <input type="text" id="filtroProjeto" class="form-control" placeholder="Filtrar por projeto..." oninput="filtrarExportacoes()">
+        </div>
+        <div id="exportLista"></div>
+        <div class="mt-3 d-flex gap-2 flex-wrap">
+          <button class="btn btn-outline-success" onclick="exportarCSV()"><i class="bi bi-file-earmark-text"></i> CSV</button>
+          <button class="btn btn-outline-primary" onclick="exportarExcel()"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+          <button class="btn btn-outline-danger" onclick="exportarDXF()"><i class="bi bi-file-earmark-zip"></i> DXF</button>
+        </div>
+      </div>
+
+      <!-- USUÁRIOS -->
+      <div id="page-users" class="page">
+        <h5><i class="bi bi-people"></i> Gerenciar Usuários</h5>
+        <p class="text-muted">Apenas administrador (E1).</p>
+        <div class="mb-3">
+          <input type="text" id="novoUser" class="form-control mb-1" placeholder="Usuário">
+          <input type="password" id="novaSenha" class="form-control mb-1" placeholder="Senha">
+          <input type="text" id="novoNome" class="form-control mb-1" placeholder="Nome completo">
+          <button class="btn btn-primary w-100" onclick="adicionarUsuario()">Adicionar Usuário</button>
+        </div>
+        <div id="listaUsuarios"></div>
+      </div>
+
+      <!-- BARRA INFERIOR -->
+      <div class="bottom-nav" id="bottomNav">
+        <button class="nav-item active" data-page="dashboard"><i class="bi bi-house-door"></i> Início</button>
+        <button class="nav-item" data-page="coleta"><i class="bi bi-camera"></i> Coletar</button>
+        <button class="nav-item" data-page="preview"><i class="bi bi-map"></i> Preview</button>
+        <button class="nav-item" data-page="config"><i class="bi bi-sliders2"></i> Config</button>
+        <button class="nav-item" data-page="export"><i class="bi bi-file-earmark-arrow-down"></i> Export</button>
+        <button class="nav-item" data-page="users"><i class="bi bi-people"></i> Usuários</button>
+      </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // ============================================================
+      // ESTADO GLOBAL
+      // ============================================================
+      var STATE = {
+        usuario: null,
+        projetoAtual: '',
+        pontosLocais: [],
+        camposConfig: [],
+        pontoTemp: null,
+        map: null,
+        markers: []
+      };
+
+      // ============================================================
+      // INICIALIZAÇÃO
+      // ============================================================
+      document.addEventListener('DOMContentLoaded', function() {
+        carregarState();
+        if (STATE.usuario) {
+          mostrarPagina('dashboard');
+          document.getElementById('usuarioLogado').textContent = STATE.usuario;
+          atualizarDashboard();
+          carregarConfigCampos();
+          carregarListaPontosLocais();
+          atualizarStatusConexao();
+        } else {
+          mostrarPagina('login');
+        }
+
+        document.querySelectorAll('.bottom-nav .nav-item').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var page = this.dataset.page;
+            if (!STATE.usuario && page !== 'login') {
+              alert('Faça login primeiro.');
+              return;
+            }
+            if (page === 'users' && STATE.usuario !== 'E1') {
+              alert('Apenas o administrador E1 pode acessar.');
+              return;
+            }
+            mostrarPagina(page);
+            if (page === 'dashboard') atualizarDashboard();
+            if (page === 'coleta') carregarListaPontosLocais();
+            if (page === 'preview') atualizarPreview();
+            if (page === 'export') carregarExportacoes();
+            if (page === 'users') carregarUsuarios();
+            if (page === 'config') carregarConfigCampos();
+            document.querySelectorAll('.bottom-nav .nav-item').forEach(function(b) {
+              b.classList.remove('active');
+            });
+            this.classList.add('active');
+          });
+        });
+
+        window.addEventListener('beforeunload', function() { salvarState(); });
+        // Sincronizar automaticamente se online
+        if (navigator.onLine && STATE.usuario) {
+          setTimeout(sincronizarOffline, 3000);
+        }
+      });
+
+      function mostrarPagina(id) {
+        document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+        var el = document.getElementById('page-' + id);
+        if (el) el.classList.add('active');
+        document.querySelectorAll('.bottom-nav .nav-item').forEach(function(b) {
+          b.classList.toggle('active', b.dataset.page === id);
+        });
+      }
+
+      // ============================================================
+      // LOGIN
+      // ============================================================
+      function efetuarLogin() {
+        var usuario = document.getElementById('loginUsuario').value.trim();
+        var senha   = document.getElementById('loginSenha').value.trim();
+        if (!usuario || !senha) {
+          document.getElementById('loginMsg').textContent = 'Preencha todos os campos.';
+          return;
+        }
+        document.getElementById('loginMsg').textContent = 'Autenticando...';
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            if (resp.success) {
+              STATE.usuario = usuario;
+              salvarState();
+              document.getElementById('usuarioLogado').textContent = usuario;
+              mostrarPagina('dashboard');
+              atualizarDashboard();
+              carregarConfigCampos();
+              carregarListaPontosLocais();
+              document.getElementById('loginMsg').textContent = '';
+            } else {
+              document.getElementById('loginMsg').textContent = 'Usuário ou senha inválidos.';
+            }
+          })
+          .withFailureHandler(function(erro) {
+            document.getElementById('loginMsg').textContent = 'Erro de conexão: ' + erro;
+          })
+          .autenticar(usuario, senha);
+      }
+
+      // ============================================================
+      // PERSISTÊNCIA (localStorage)
+      // ============================================================
+      function carregarState() {
+        try {
+          var saved = localStorage.getItem('croquiState');
+          if (saved) {
+            var parsed = JSON.parse(saved);
+            STATE.usuario = parsed.usuario || null;
+            STATE.pontosLocais = parsed.pontosLocais || [];
+            STATE.camposConfig = parsed.camposConfig || [];
+          }
+        } catch(e) {}
+      }
+
+      function salvarState() {
+        var data = {
+          usuario: STATE.usuario,
+          pontosLocais: STATE.pontosLocais,
+          camposConfig: STATE.camposConfig
+        };
+        localStorage.setItem('croquiState', JSON.stringify(data));
+      }
+
+      // ============================================================
+      // STATUS CONEXÃO
+      // ============================================================
+      function atualizarStatusConexao() {
+        var el = document.getElementById('statusConexao');
+        if (navigator.onLine) {
+          el.textContent = 'Online';
+          el.className = 'status-online';
+        } else {
+          el.textContent = 'Offline';
+          el.className = 'status-offline';
+        }
+      }
+      window.addEventListener('online', atualizarStatusConexao);
+      window.addEventListener('offline', atualizarStatusConexao);
+
+      // ============================================================
+      // DASHBOARD
+      // ============================================================
+      function atualizarDashboard() {
+        var total = STATE.pontosLocais.length;
+        document.getElementById('totalPontos').textContent = total;
+        var projetos = new Set();
+        STATE.pontosLocais.forEach(function(p) { if (p.projeto) projetos.add(p.projeto); });
+        document.getElementById('totalProjetos').textContent = projetos.size;
+
+        var container = document.getElementById('ultimosPontos');
+        container.innerHTML = '';
+        var ultimos = STATE.pontosLocais.slice(-5).reverse();
+        if (ultimos.length === 0) {
+          container.innerHTML = '<p class="text-muted">Nenhum ponto coletado ainda.</p>';
+        } else {
+          ultimos.forEach(function(p) {
+            var div = document.createElement('div');
+            div.className = 'ponto-item d-flex justify-content-between';
+            div.innerHTML = `
+              <div><strong>${p.projeto || 'Sem projeto'}</strong><br>
+              <small>${new Date(p.timestamp).toLocaleString()}</small></div>
+              <span class="badge-projeto">${p.usuario}</span>
+            `;
+            container.appendChild(div);
+          });
+        }
+        carregarListaPontosLocais();
+      }
+
+      // ============================================================
+      // COLETA
+      // ============================================================
+      function abrirCamera() {
+        var projeto = document.getElementById('projetoInput').value.trim();
+        if (!projeto) {
+          alert('Digite o nome do projeto.');
+          return;
+        }
+        STATE.projetoAtual = projeto;
+        var obrigatorios = STATE.camposConfig.filter(function(c) { return c.habilitado; });
+        if (obrigatorios.length > 0) {
+          document.getElementById('formCampos').style.display = 'block';
+          renderizarCampos(obrigatorios);
+        } else {
+          document.getElementById('formCampos').style.display = 'none';
+        }
+        document.getElementById('cameraInput').click();
+      }
+
+      document.getElementById('cameraInput').addEventListener('change', function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('coletaStatus').textContent = 'Obtendo localização...';
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            var lat = pos.coords.latitude;
+            var lng = pos.coords.longitude;
+            document.getElementById('coletaStatus').textContent = 'Processando imagem...';
+            var reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = function(ev) {
+              var base64 = ev.target.result;
+              var img = new Image();
+              img.src = base64;
+              img.onload = function() {
+                var canvas = document.createElement('canvas');
+                var maxSize = 1000;
+                var w = img.width, h = img.height;
+                if (w > h) {
+                  if (w > maxSize) { h *= maxSize / w; w = maxSize; }
+                } else {
+                  if (h > maxSize) { w *= maxSize / h; h = maxSize; }
+                }
+                canvas.width = w; canvas.height = h;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                var base64Otimizada = canvas.toDataURL('image/jpeg', 0.7);
+                STATE.pontoTemp = {
+                  fotoBase64: base64Otimizada,
+                  latitude: lat,
+                  longitude: lng,
+                  timestamp: new Date().toISOString()
+                };
+                document.getElementById('coletaStatus').textContent = 'Foto capturada. Preencha os campos e confirme.';
+                var obrigatorios = STATE.camposConfig.filter(function(c) { return c.habilitado; });
+                if (obrigatorios.length === 0) {
+                  confirmarColeta();
+                } else {
+                  document.getElementById('formCampos').style.display = 'block';
+                }
+              };
+            };
+          },
+          function(err) {
+            document.getElementById('coletaStatus').textContent = 'Erro GPS: ' + err.message;
+          },
+          { enableHighAccuracy: true }
+        );
+      });
+
+      function renderizarCampos(campos) {
+        var container = document.getElementById('camposContainer');
+        container.innerHTML = '';
+        campos.forEach(function(campo) {
+          var div = document.createElement('div');
+          div.className = 'mb-2';
+          div.innerHTML = `
+            <label class="form-label">${campo.nome}</label>
+            <input type="text" class="form-control campo-input" data-nome="${campo.nome}" placeholder="${campo.nome}">
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      function confirmarColeta() {
+        if (!STATE.pontoTemp) {
+          alert('Nenhuma foto capturada.');
+          return;
+        }
+        var campos = {};
+        document.querySelectorAll('.campo-input').forEach(function(inp) {
+          campos[inp.dataset.nome] = inp.value.trim();
+        });
+        var ponto = {
+          usuario: STATE.usuario,
+          projeto: STATE.projetoAtual,
+          latitude: STATE.pontoTemp.latitude,
+          longitude: STATE.pontoTemp.longitude,
+          fotoBase64: STATE.pontoTemp.fotoBase64,
+          timestamp: STATE.pontoTemp.timestamp,
+          campos: campos,
+          sincronizado: false
+        };
+        STATE.pontosLocais.push(ponto);
+        salvarState();
+        STATE.pontoTemp = null;
+        document.getElementById('formCampos').style.display = 'none';
+        document.getElementById('coletaStatus').textContent = 'Ponto salvo localmente.';
+        document.getElementById('cameraInput').value = '';
+        carregarListaPontosLocais();
+        atualizarDashboard();
+        if (navigator.onLine) sincronizarOffline();
+      }
+
+      function cancelarColeta() {
+        STATE.pontoTemp = null;
+        document.getElementById('formCampos').style.display = 'none';
+        document.getElementById('coletaStatus').textContent = 'Coleta cancelada.';
+        document.getElementById('cameraInput').value = '';
+      }
+
+      function carregarListaPontosLocais() {
+        var container = document.getElementById('listaPontosLocais');
+        container.innerHTML = '';
+        if (STATE.pontosLocais.length === 0) {
+          container.innerHTML = '<p class="text-muted">Nenhum ponto local.</p>';
+          return;
+        }
+        STATE.pontosLocais.forEach(function(p) {
+          var div = document.createElement('div');
+          div.className = 'ponto-item';
+          div.innerHTML = `
+            <div class="d-flex justify-content-between">
+              <strong>${p.projeto}</strong>
+              <span class="badge ${p.sincronizado ? 'bg-success' : 'bg-warning'}">${p.sincronizado ? 'Sinc' : 'Pend'}</span>
+            </div>
+            <small>${new Date(p.timestamp).toLocaleString()} - ${p.usuario}</small>
+            <br><small>Lat: ${p.latitude}, Lng: ${p.longitude}</small>
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      // ============================================================
+      // SINCRONIZAÇÃO
+      // ============================================================
+      function sincronizarOffline() {
+        if (!navigator.onLine) {
+          alert('Sem conexão com a internet. Os pontos serão sincronizados quando online.');
+          return;
+        }
+        var pendentes = STATE.pontosLocais.filter(function(p) { return !p.sincronizado; });
+        if (pendentes.length === 0) {
+          alert('Nenhum ponto pendente.');
+          return;
+        }
+        document.getElementById('coletaStatus').textContent = 'Sincronizando ' + pendentes.length + ' pontos...';
+        google.script.run
+          .withSuccessHandler(function(resultados) {
+            var sincronizados = 0;
+            pendentes.forEach(function(p, idx) {
+              if (resultados[idx] && resultados[idx].success) {
+                p.sincronizado = true;
+                sincronizados++;
+              }
+            });
+            salvarState();
+            document.getElementById('coletaStatus').textContent = sincronizados + ' pontos sincronizados.';
+            carregarListaPontosLocais();
+            atualizarDashboard();
+          })
+          .withFailureHandler(function(erro) {
+            document.getElementById('coletaStatus').textContent = 'Erro na sincronização: ' + erro;
+          })
+          .sincronizarPontos(pendentes);
+      }
+
+      // ============================================================
+      // PREVIEW (Mapa)
+      // ============================================================
+      function atualizarPreview() {
+        if (STATE.map) { STATE.map.remove(); STATE.map = null; }
+        var mapDiv = document.getElementById('map');
+        if (STATE.pontosLocais.length === 0) {
+          mapDiv.innerHTML = '<p class="text-muted text-center pt-5">Nenhum ponto para exibir.</p>';
+          return;
+        }
+        var primeiro = STATE.pontosLocais[0];
+        STATE.map = L.map('map').setView([primeiro.latitude, primeiro.longitude], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(STATE.map);
+        STATE.pontosLocais.forEach(function(p) {
+          var marker = L.marker([p.latitude, p.longitude]).addTo(STATE.map);
+          var camposStr = '';
+          if (p.campos) {
+            for (var chave in p.campos) {
+              if (p.campos[chave]) camposStr += chave + ': ' + p.campos[chave] + '<br>';
+            }
+          }
+          marker.bindPopup(`
+            <b>${p.projeto}</b><br>
+            Usuário: ${p.usuario}<br>
+            ${new Date(p.timestamp).toLocaleString()}<br>
+            ${camposStr}
+          `);
+        });
+      }
+
+      // ============================================================
+      // CONFIGURAÇÕES DE CAMPOS
+      // ============================================================
+      function carregarConfigCampos() {
+        google.script.run
+          .withSuccessHandler(function(campos) {
+            STATE.camposConfig = campos;
+            salvarState();
+            renderizarConfigCampos();
+          })
+          .getConfigCampos();
+      }
+
+      function renderizarConfigCampos() {
+        var container = document.getElementById('configCamposList');
+        container.innerHTML = '';
+        STATE.camposConfig.forEach(function(campo, idx) {
+          var div = document.createElement('div');
+          div.className = 'd-flex justify-content-between align-items-center card-field';
+          div.innerHTML = `
+            <span>${campo.nome}</span>
+            <div>
+              <label class="toggle-switch">
+                <input type="checkbox" ${campo.habilitado ? 'checked' : ''} onchange="toggleCampo(${idx}, this.checked)">
+                <span class="slider"></span>
+              </label>
+              <button class="btn btn-sm btn-outline-danger ms-2" onclick="removerCampo(${idx})"><i class="bi bi-trash"></i></button>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      function toggleCampo(idx, checked) {
+        STATE.camposConfig[idx].habilitado = checked;
+        salvarState();
+      }
+
+      function adicionarCampo() {
+        var input = document.getElementById('novoCampoInput');
+        var nome = input.value.trim();
+        if (!nome) return;
+        STATE.camposConfig.push({ nome: nome, habilitado: false });
+        input.value = '';
+        renderizarConfigCampos();
+        salvarState();
+      }
+
+      function removerCampo(idx) {
+        STATE.camposConfig.splice(idx, 1);
+        renderizarConfigCampos();
+        salvarState();
+      }
+
+      function salvarConfigCampos() {
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            alert('Configurações salvas!');
+          })
+          .setConfigCampos(STATE.camposConfig);
+      }
+
+      // ============================================================
+      // EXPORTAÇÕES
+      // ============================================================
+      function carregarExportacoes() {
+        var projetos = new Set();
+        STATE.pontosLocais.forEach(function(p) { if (p.projeto) projetos.add(p.projeto); });
+        var container = document.getElementById('exportLista');
+        container.innerHTML = '';
+        if (projetos.size === 0) {
+          container.innerHTML = '<p class="text-muted">Nenhum projeto disponível.</p>';
+          return;
+        }
+        projetos.forEach(function(proj) {
+          var count = STATE.pontosLocais.filter(function(p) { return p.projeto === proj; }).length;
+          var div = document.createElement('div');
+          div.className = 'ponto-item d-flex justify-content-between';
+          div.innerHTML = `
+            <span><strong>${proj}</strong> (${count} pontos)</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="filtrarProjeto('${proj}')">Filtrar</button>
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      function filtrarProjeto(proj) {
+        document.getElementById('filtroProjeto').value = proj;
+        filtrarExportacoes();
+      }
+
+      function filtrarExportacoes() {
+        var termo = document.getElementById('filtroProjeto').value.toLowerCase();
+        var items = document.querySelectorAll('#exportLista .ponto-item');
+        items.forEach(function(item) {
+          var texto = item.textContent.toLowerCase();
+          item.style.display = texto.includes(termo) ? '' : 'none';
+        });
+      }
+
+      function exportarCSV() {
+        var projeto = document.getElementById('filtroProjeto').value.trim();
+        if (!projeto) { alert('Digite ou selecione um projeto.'); return; }
+        google.script.run
+          .withSuccessHandler(function(base64) {
+            if (!base64) { alert('Nenhum dado encontrado.'); return; }
+            baixarArquivo(base64, 'csv', 'croqui.csv');
+          })
+          .exportarCSV(projeto);
+      }
+
+      function exportarExcel() {
+        var projeto = document.getElementById('filtroProjeto').value.trim();
+        if (!projeto) { alert('Digite ou selecione um projeto.'); return; }
+        google.script.run
+          .withSuccessHandler(function(base64) {
+            if (!base64) { alert('Nenhum dado encontrado.'); return; }
+            baixarArquivo(base64, 'vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'croqui.xlsx');
+          })
+          .exportarExcel(projeto);
+      }
+
+      function exportarDXF() {
+        google.script.run
+          .withSuccessHandler(function(base64) {
+            if (!base64) { alert('Nenhum dado para exportar DXF.'); return; }
+            baixarArquivo(base64, 'dxf', 'croqui.dxf');
+          })
+          .exportarDXF();
+      }
+
+      function baixarArquivo(base64, mimeType, filename) {
+        var byteChars = atob(base64);
+        var byteNumbers = new Array(byteChars.length);
+        for (var i = 0; i < byteChars.length; i++) {
+          byteNumbers[i] = byteChars.charCodeAt(i);
+        }
+        var byteArray = new Uint8Array(byteNumbers);
+        var blob = new Blob([byteArray], {type: 'application/' + mimeType});
+        var link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
+        window.URL.revokeObjectURL(link.href);
+      }
+
+      // ============================================================
+      // USUÁRIOS
+      // ============================================================
+      function carregarUsuarios() {
+        if (STATE.usuario !== 'E1') return;
+        google.script.run
+          .withSuccessHandler(function(usuarios) {
+            var container = document.getElementById('listaUsuarios');
+            container.innerHTML = '';
+            usuarios.forEach(function(u) {
+              var div = document.createElement('div');
+              div.className = 'ponto-item d-flex justify-content-between align-items-center';
+              div.innerHTML = `
+                <div><strong>${u.usuario}</strong> - ${u.nome}</div>
+                <button class="btn btn-sm btn-outline-danger" onclick="excluirUsuario('${u.usuario}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              `;
+              container.appendChild(div);
+            });
+          })
+          .listarUsuarios();
+      }
+
+      function adicionarUsuario() {
+        var user = document.getElementById('novoUser').value.trim();
+        var senha = document.getElementById('novaSenha').value.trim();
+        var nome = document.getElementById('novoNome').value.trim();
+        if (!user || !senha || !nome) { alert('Preencha todos os campos.'); return; }
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            alert('Usuário adicionado.');
+            document.getElementById('novoUser').value = '';
+            document.getElementById('novaSenha').value = '';
+            document.getElementById('novoNome').value = '';
+            carregarUsuarios();
+          })
+          .salvarUsuario(user, senha, nome);
+      }
+
+      function excluirUsuario(usuario) {
+        if (!confirm('Excluir usuário ' + usuario + '?')) return;
+        google.script.run
+          .withSuccessHandler(function(resp) { carregarUsuarios(); })
+          .excluirUsuario(usuario);
+      }
+
+      // Prevenir pull-to-refresh (opcional)
+      document.addEventListener('touchmove', function(e) {
+        if (e.target.closest('.app-container')) { /* permitir scroll */ }
+      }, { passive: true });
+    </script>
+  </body>
+</html>
