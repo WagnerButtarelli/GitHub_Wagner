@@ -1,0 +1,71 @@
+<!-- ===== SCANNER ===== -->
+<section class="page-section" id="pageScanner">
+  <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:2px;">Olá, <span id="scannerSaudacaoNome">Usuário</span></p>
+  <h2 class="page-title"><i class="fas fa-barcode"></i> Leitor de Códigos</h2>
+
+  <p class="form-label" style="margin:20px 0 10px;">Produtos Cadastrados</p>
+  <div class="stats-grid">
+    <div class="stat-card total">
+      <div class="stat-label">Hoje</div>
+      <div class="stat-value" id="scannerStatHoje">0</div>
+    </div>
+    <div class="stat-card total">
+      <div class="stat-label">Mês</div>
+      <div class="stat-value" id="scannerStatMes">0</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <div class="card-body">
+      <!-- Botão principal para abrir a câmera externa -->
+      <button class="btn btn-primary" id="btnAbrirCameraExterna" style="width:100%; padding:16px; font-size:1.1rem;">
+        <i class="fas fa-camera"></i> Escanear Código
+      </button>
+
+      <!-- Display do código (também aceita digitação via teclado físico + Enter) -->
+      <div style="margin-top:24px;">
+        <label class="form-label" style="font-size:0.85rem;">Código de Barras</label>
+        <div id="scannerDisplay" class="scanner-display">00000000000</div>
+      </div>
+
+      <!-- Contingência: digitação manual, caso a leitura pela câmera falhe -->
+      <div style="text-align:center; margin-top:14px;">
+        <button type="button" id="btnToggleManual" class="btn-link-manual">
+          <i class="fas fa-keyboard"></i> Não conseguiu escanear? Digite manualmente
+        </button>
+      </div>
+
+      <div id="scannerManualPanel" style="display:none; margin-top:16px; border-top:1px solid rgba(255,255,255,0.05); padding-top:16px;">
+        <label class="form-label" for="scannerInputManual" style="font-size:0.85rem;">Digite o código com o teclado</label>
+        <input type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" id="scannerInputManual" class="form-input scanner-manual-input" placeholder="Ex: 7898080642899">
+
+        <p class="form-label" style="text-align:center; margin:18px 0 10px;">Ou toque nos números</p>
+        <div class="numpad">
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="1">1</button>
+            <button class="numpad-btn" data-value="2">2</button>
+            <button class="numpad-btn" data-value="3">3</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="4">4</button>
+            <button class="numpad-btn" data-value="5">5</button>
+            <button class="numpad-btn" data-value="6">6</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="7">7</button>
+            <button class="numpad-btn" data-value="8">8</button>
+            <button class="numpad-btn" data-value="9">9</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn" data-value="apagar">← Apagar</button>
+            <button class="numpad-btn" data-value="0">0</button>
+            <button class="numpad-btn" data-value="limpar">C</button>
+          </div>
+          <div class="numpad-row">
+            <button class="numpad-btn numpad-ok" data-value="ok"><i class="fas fa-check"></i> Confirmar Código</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
