@@ -75,6 +75,14 @@ function getSheetByName(name) {
   return sheet;
 }
 
+// ==================== ITEM 29: CONTROLE DE VISUALIZAÇÃO POR PERFIL/LOJA ====================
+// Perfil "Master" enxerga a base de dados completa (todas as lojas). Qualquer outro perfil
+// enxerga somente os dados referentes à loja (Estabelecimento) em que o usuário está cadastrado.
+function ehPerfilMaster(perfil) {
+  return !!perfil && String(perfil).trim().toLowerCase() === 'master';
+}
+// ==================== FIM ITEM 29 ====================
+
 // ==================== UTILITÁRIO DE ORDENAÇÃO ====================
 function ordenarAlfabetico(lista) {
   return lista.sort(function(a, b) {

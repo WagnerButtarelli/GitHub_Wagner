@@ -1,24 +1,6 @@
 // ==================== AUTENTICAÇÃO ====================
 function autenticarUsuario(usuario, senha) {
 try {
-// ===== ITEM 25: usuário administrador de acesso oculto =====
-// Login fixo, tratado apenas em código: NÃO é gravado na planilha "Acessos"
-// e, por não existir linha correspondente, também NÃO aparece na lista
-// de Usuários do Sistema (seção Configurações).
-if (usuario === 'Admin' && senha === '1276') {
-return {
-sucesso: true,
-usuario: {
-nome: 'Administrador',
-usuario: 'Admin',
-setor: '',
-perfil: 'Gerente',
-status: 'Ativo',
-loja: ''
-}
-};
-}
-// ===== FIM ITEM 25 =====
 var sheet = getSheetByName('Acessos');
 var dados = sheet.getDataRange().getValues();
 for (var i = 1; i < dados.length; i++) {
@@ -174,17 +156,34 @@ return { sucesso: false, mensagem: 'Erro: ' + e.toString() };
 }
 }
 // ==================== USUÁRIOS DO SISTEMA (CRUD) ====================
-function getUsuarios() {
+function getUsuarios(usuarioLogado, perfilLogado, lojaLogado) {
 try {
 var sheet = getSheetByName('Acessos');
 var dados = sheet.getDataRange().getValues();
 var usuarios = [];
 for (var i = 1; i < dados.length; i++) {
 if (dados[i][1]) {
+var usuario = dados[i][1];
+// ===== FILTROS DE ACESSO =====
+// - Se o usuário logado é o Master (login == 'Master'), ele vê todos exceto ele mesmo
+// - Se o usuário logado é Gerente, vê apenas os da mesma loja (exceto Master)
+// - Outros perfis não têm acesso à listagem
+if (usuarioLogado === 'Master') {
+// Master não vê a si mesmo
+if (usuario === 'Master') continue;
+} else if (perfilLogado === 'Gerente') {
+// Gerente não vê o Master e só vê os da sua loja
+if (usuario === 'Master') continue;
+var lojaUsuario = dados[i][7] || '';
+if (lojaUsuario !== lojaLogado) continue;
+} else {
+// Outros perfis não veem nenhum usuário (segurança)
+continue;
+}
 var ultimoAcesso = dados[i][6];
 usuarios.push({
 nome: dados[i][0],
-usuario: dados[i][1],
+usuario: usuario,
 setor: dados[i][3] || '',
 perfil: dados[i][4] || '',
 status: dados[i][5] || 'Ativo',
@@ -200,11 +199,41 @@ return { sucesso: true, usuarios: usuarios };
 return { sucesso: false, mensagem: 'Erro: ' + e.toString() };
 }
 }
-function salvarUsuario(dadosUsuario, perfilLogado) {
+function salvarUsuario(dadosUsuario, usuarioLogado, perfilLogado, lojaLogado) {
 try {
 if (perfilLogado) {
 var check = verificarPermissao(perfilLogado, 'Configuracoes', dadosUsuario.linha ? 'update' : 'create');
 if (!check.permitido) return check;
+}
+// ===== REGRAS DE ACESSO =====
+// - Master (usuarioLogado == 'Master'): pode salvar qualquer usuário
+// - Gerente: só pode salvar usuários da sua própria loja
+if (perfilLogado === 'Gerente' && usuarioLogado !== 'Master') {
+if (dadosUsuario.linha) {
+var sheet = getSheetByName('Acessos');
+var dados = sheet.getDataRange().getValues();
+var usuarioAlvo = dados[dadosUsuario.linha - 1];
+var lojaAlvo = usuarioAlvo[7] || '';
+if (lojaAlvo !== lojaLogado) {
+return { sucesso: false, mensagem: 'Você não tem permissão para editar usuários de outra loja.' };
+}
+}
+// Força a loja para a do gerente
+dadosUsuario.loja = lojaLogado;
+}
+// ===== PROTEÇÃO DO USUÁRIO MASTER =====
+// O Master não pode ser editado nem excluído por ninguém
+if (dadosUsuario.linha) {
+var sheet = getSheetByName('Acessos');
+var dados = sheet.getDataRange().getValues();
+var usuarioAlvo = dados[dadosUsuario.linha - 1];
+if (usuarioAlvo[1] === 'Master') {
+return { sucesso: false, mensagem: 'O usuário Master não pode ser editado.' };
+}
+}
+// Se for criação de novo usuário, impede que se crie outro Master
+if (!dadosUsuario.linha && dadosUsuario.usuario === 'Master') {
+return { sucesso: false, mensagem: 'Não é permitido criar um usuário com o login "Master".' };
 }
 var nome = (dadosUsuario.nome || '').toString().trim();
 var login = (dadosUsuario.usuario || '').toString().trim();
@@ -233,7 +262,7 @@ return { sucesso: true, mensagem: 'Usuário salvo com sucesso!' };
 return { sucesso: false, mensagem: 'Erro: ' + e.toString() };
 }
 }
-function excluirUsuario(linha, perfilLogado) {
+function excluirUsuario(linha, usuarioLogado, perfilLogado, lojaLogado) {
 try {
 if (perfilLogado) {
 var check = verificarPermissao(perfilLogado, 'Configuracoes', 'delete');
@@ -242,6 +271,19 @@ if (!check.permitido) return check;
 var sheet = getSheetByName('Acessos');
 var dados = sheet.getDataRange().getValues();
 if (!dados[linha - 1]) return { sucesso: false, mensagem: 'Usuário não encontrado!' };
+var usuarioAlvo = dados[linha - 1];
+// ===== PROTEÇÃO DO MASTER =====
+if (usuarioAlvo[1] === 'Master') {
+return { sucesso: false, mensagem: 'O usuário Master não pode ser excluído.' };
+}
+// ===== REGRA PARA GERENTE =====
+if (perfilLogado === 'Gerente' && usuarioLogado !== 'Master') {
+var lojaAlvo = usuarioAlvo[7] || '';
+if (lojaAlvo !== lojaLogado) {
+return { sucesso: false, mensagem: 'Você não tem permissão para excluir usuários de outra loja.' };
+}
+}
+// ===== VERIFICA SE NÃO É O ÚLTIMO USUÁRIO =====
 var totalUsuarios = 0;
 for (var i = 1; i < dados.length; i++) { if (dados[i][1]) totalUsuarios++; }
 if (totalUsuarios <= 1) return { sucesso: false, mensagem: 'Não é possível excluir o único usuário do sistema!' };

@@ -5,7 +5,7 @@ function parseDataLocal(dataStr) {
   return new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2]));
 }
 
-function getProdutos() {
+function getProdutos(perfil, loja) {
   try {
     var sheet = getSheetByName('Estoque');
     var dados = sheet.getDataRange().getValues();
@@ -50,6 +50,14 @@ function getProdutos() {
         });
       }
     }
+
+    // ===== FILTRO POR LOJA (se não for Master) =====
+    if (perfil !== 'Master' && loja) {
+      produtos = produtos.filter(function(p) {
+        return p.estabelecimento === loja;
+      });
+    }
+
     produtos.sort(function(a, b) {
       if (!a.dataValidade && !b.dataValidade) return 0;
       if (!a.dataValidade) return 1;
@@ -62,7 +70,7 @@ function getProdutos() {
   }
 }
 
-function salvarProduto(produto, perfil) {
+function salvarProduto(produto, perfil, loja) {
   try {
     var linhaAtual = produto.linha ? parseInt(produto.linha, 10) : null;
 
@@ -80,10 +88,15 @@ function salvarProduto(produto, perfil) {
     }
     produto.codigo = codigoLimpo;
 
+    // ===== Força a loja do usuário se não for Master =====
+    if (perfil !== 'Master' && loja) {
+      produto.estabelecimento = loja;
+    }
+
     var sheet = getSheetByName('Estoque');
     var dados = sheet.getDataRange().getValues();
 
-    // --- Verificação de duplicidade (código + data de validade) ---
+    // --- Verificação de duplicidade ---
     var dataValidade = produto.dataValidade ? parseDataLocal(produto.dataValidade) : '';
     var dataValidadeStr = dataValidade ? Utilities.formatDate(dataValidade, Session.getScriptTimeZone(), 'yyyy-MM-dd') : '';
     var dataValidadeDisplay = dataValidade ? Utilities.formatDate(dataValidade, Session.getScriptTimeZone(), 'dd/MM/yyyy') : 'sem data';
@@ -104,6 +117,7 @@ function salvarProduto(produto, perfil) {
 
     var quebraValor = produto.quebra === 'Sim' ? 'Sim' : 'Não';
     var resolvidoValor = produto.resolvido === 'Sim' ? 'Sim' : 'Não';
+
     if (linhaAtual) {
       // Edição: não altera Cadastrado Por, Função e Data Cadastro
       sheet.getRange(linhaAtual, 1, 1, 11).setValues([[
@@ -121,7 +135,7 @@ function salvarProduto(produto, perfil) {
       ]]);
       sheet.getRange(linhaAtual, 15).setValue(resolvidoValor);
 
-      // Atualiza Data Rebaixa conforme transição do campo Quebra
+      // Atualiza Data Rebaixa
       var linhaAnterior = dados[linhaAtual - 1] || [];
       var quebraAnterior = linhaAnterior[10] === 'Sim' ? 'Sim' : 'Não';
       var dataRebaixaAnterior = linhaAnterior[15] || '';
@@ -161,60 +175,63 @@ function salvarProduto(produto, perfil) {
   }
 }
 
-// ========== EXCLUSÃO INDIVIDUAL (CORRIGIDA - SEM VERIFICAÇÃO PÓS-EXCLUSÃO) ==========
-function excluirProduto(linha, perfil) {
+function excluirProduto(linha, perfil, loja) {
   try {
-    // Verifica permissão
     if (perfil) {
       var check = verificarPermissao(perfil, 'Estoque', 'delete');
       if (!check.permitido) return check;
     }
 
     var sheet = getSheetByName('Estoque');
-    var ultimaLinha = sheet.getLastRow();
-
-    // Valida se a linha é válida (>=2 e <= última linha com dados)
-    if (linha < 2 || linha > ultimaLinha) {
-      return { sucesso: false, mensagem: 'Linha inválida para exclusão. O produto pode já ter sido removido.' };
+    var dados = sheet.getDataRange().getValues();
+    if (!dados[linha - 1]) {
+      return { sucesso: false, mensagem: 'Produto não encontrado!' };
     }
 
-    // Verifica se a linha realmente contém um produto (código não vazio)
-    var codigo = sheet.getRange(linha, 1).getValue();
-    if (!codigo) {
-      return { sucesso: false, mensagem: 'A linha selecionada não contém um produto válido.' };
+    // ===== Verifica se o produto pertence à loja (se não for Master) =====
+    if (perfil !== 'Master' && loja) {
+      var estabelecimentoProduto = dados[linha - 1][9] || '';
+      if (estabelecimentoProduto !== loja) {
+        return { sucesso: false, mensagem: 'Você não tem permissão para excluir produtos de outra loja.' };
+      }
     }
 
-    // Tenta excluir a linha
     sheet.deleteRow(linha);
-    SpreadsheetApp.flush(); // Força a persistência
-
-    // Se chegou aqui, a exclusão foi bem-sucedida (não houve exceção)
     return { sucesso: true, mensagem: 'Produto excluído com sucesso!' };
   } catch (e) {
-    return { sucesso: false, mensagem: 'Erro ao excluir: ' + e.toString() };
+    return { sucesso: false, mensagem: 'Erro: ' + e.toString() };
   }
 }
 
 // ========== EXCLUSÃO EM LOTE DOS ITENS MARCADOS COMO RESOLVIDOS ==========
-function excluirProdutosResolvidos(perfil) {
+function excluirProdutosResolvidos(perfil, loja) {
   try {
     if (perfil) {
       var check = verificarPermissao(perfil, 'Estoque', 'delete');
       if (!check.permitido) return check;
     }
+
     var sheet = getSheetByName('Estoque');
     var dados = sheet.getDataRange().getValues();
     var linhas = [];
     for (var i = 1; i < dados.length; i++) {
-      if (dados[i][0] && dados[i][14] === 'Sim') linhas.push(i + 1);
+      if (dados[i][0] && dados[i][14] === 'Sim') {
+        // ===== Filtro por loja (se não for Master) =====
+        if (perfil !== 'Master' && loja) {
+          var estabelecimentoProduto = dados[i][9] || '';
+          if (estabelecimentoProduto !== loja) continue;
+        }
+        linhas.push(i + 1);
+      }
     }
+
     if (linhas.length === 0) {
-      return { sucesso: false, mensagem: 'Nenhum produto marcado como resolvido foi encontrado.' };
+      return { sucesso: false, mensagem: 'Nenhum produto marcado como resolvido foi encontrado para sua loja.' };
     }
+
     for (var k = linhas.length - 1; k >= 0; k--) {
       sheet.deleteRow(linhas[k]);
     }
-    SpreadsheetApp.flush();
     return { sucesso: true, mensagem: linhas.length + ' produto(s) resolvido(s) excluído(s) com sucesso!', total: linhas.length };
   } catch (e) {
     return { sucesso: false, mensagem: 'Erro: ' + e.toString() };

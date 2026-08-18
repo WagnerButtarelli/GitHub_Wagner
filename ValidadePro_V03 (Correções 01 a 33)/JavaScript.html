@@ -19,6 +19,14 @@ var ultimoNomeScanner='';
 var cadastroEditando=null;
 var confirmacaoTipo=null;
 
+// ===== VARIÁVEIS PARA CONFIRMAÇÃO DE DÍGITOS =====
+var callbackConfirmacaoDigitos = null;
+var codigoPendenteConfirmacao = null;
+
+// ===== ITEM 30: CONTROLE DE EXECUÇÃO ÚNICA DO SCANNER (evita chamadas/listeners duplicados) =====
+var tecladoScannerInicializado = false;
+var scanManualEmAndamento = false;
+
 // ===== URL DA PÁGINA EXTERNA DE SCANNER (ALTERE PARA A SUA) =====
 var SCANNER_EXTERNO_URL = "https://wagnerbuttarelli.github.io/GitHub_Wagner/scanner-camera.html";
 
@@ -86,14 +94,62 @@ function getSugestao(produto){
   return'<span style="color:var(--accent-green);"><i class="fas fa-check"></i> Estoque Normal</span>';
 }
 
-// ========== VALIDAÇÃO CÓDIGO DE BARRAS ==========
-function validarCodigoBarras(codigo) {
+// ========== VALIDAÇÃO CÓDIGO DE BARRAS (ASSÍNCRONA COM CONFIRMAÇÃO) ==========
+function exibirConfirmacaoDigitos(codigo, callback) {
+  // ===== ITEM 30: se já existe uma confirmação de dígitos pendente, ignora chamadas repetidas =====
+  // (evita que chamadas concorrentes sobrescrevam o callback e deixem o modal em estado inconsistente)
+  if (confirmacaoTipo === 'digitos' && document.getElementById('modalConfirmacao').classList.contains('active')) {
+    codigoPendenteConfirmacao = codigo;
+    return;
+  }
+
+  codigoPendenteConfirmacao = codigo;
+  callbackConfirmacaoDigitos = callback;
+  confirmacaoTipo = 'digitos';
+  document.getElementById('confirmacaoMensagem').textContent = 'Quantidade de dígitos do código de barras diferente do padrão (13). Deseja continuar mesmo assim?';
+
+  // ===== ITEM 30: garante que os DOIS botões (Cancelar/Confirmar) sempre fiquem visíveis =====
+  var btnCancelar = document.getElementById('btnCancelarExclusao');
+  var btnConfirmar = document.getElementById('btnConfirmarExclusao');
+  if (btnCancelar) { btnCancelar.style.display = ''; btnCancelar.style.visibility = ''; btnCancelar.textContent = 'Cancelar'; }
+  if (btnConfirmar) { btnConfirmar.style.display = ''; btnConfirmar.style.visibility = ''; btnConfirmar.innerHTML = '<i class="fas fa-check"></i> Confirmar'; }
+
+  var modalTitle = document.querySelector('#modalConfirmacao .modal-title');
+  if (modalTitle) {
+    modalTitle.innerHTML = '<i class="fas fa-question-circle" style="color:var(--accent-yellow);"></i> Confirma o código informado?';
+    modalTitle.style.color = '';
+  }
+
+  document.getElementById('modalConfirmacao').classList.add('active');
+}
+
+function restaurarTituloConfirmacao() {
+  var modalTitle = document.querySelector('#modalConfirmacao .modal-title');
+  if (modalTitle) {
+    modalTitle.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Confirmar Exclusão';
+    modalTitle.style.color = 'var(--accent-red)';
+  }
+  document.getElementById('btnConfirmarExclusao').innerHTML = '<i class="fas fa-trash"></i> Excluir';
+}
+
+function validarCodigoBarrasAsync(codigo, callback) {
   var limpo = String(codigo).replace(/\s/g, '').replace(/[^0-9]/g, '');
   if (!limpo) {
     showToast('Código de barras inválido! Deve conter apenas números.', 'error');
-    return null;
+    callback(null);
+    return;
   }
-  return limpo;
+  if (limpo.length === 13) {
+    callback(limpo);
+  } else {
+    exibirConfirmacaoDigitos(limpo, function(confirmado) {
+      if (confirmado) {
+        callback(limpo);
+      } else {
+        callback(null);
+      }
+    });
+  }
 }
 
 // ==================== CONTROLE DE PERMISSÕES FRONTEND ====================
@@ -213,53 +269,6 @@ function verificarAcao(acao, secao){
   return true;
 }
 
-// ==================== ITEM 26: PERSISTÊNCIA DE SESSÃO E ÚLTIMA TELA (localStorage) ====================
-// Ao dar refresh (F5) no navegador, o Apps Script reprocessa o doGet e recarrega a página do zero,
-// perdendo o estado em memória (usuarioLogado, página ativa etc). Para o usuário não voltar sempre
-// para o login/Dashboard, guardamos os dados básicos do usuário logado e o nome da última página
-// visitada no localStorage do navegador, e restauramos isso automaticamente ao carregar a página.
-var CHAVE_SESSAO = 'validadepro_sessao';
-var CHAVE_PAGINA = 'validadepro_pagina';
-function salvarSessaoLocal(usuario){
-  try { localStorage.setItem(CHAVE_SESSAO, JSON.stringify(usuario)); } catch(e){}
-}
-function obterSessaoLocal(){
-  try {
-    var raw = localStorage.getItem(CHAVE_SESSAO);
-    return raw ? JSON.parse(raw) : null;
-  } catch(e){ return null; }
-}
-function limparSessaoLocal(){
-  try { localStorage.removeItem(CHAVE_SESSAO); localStorage.removeItem(CHAVE_PAGINA); } catch(e){}
-}
-function salvarPaginaAtualLocal(page){
-  try { localStorage.setItem(CHAVE_PAGINA, page); } catch(e){}
-}
-function obterPaginaAtualLocal(){
-  try { return localStorage.getItem(CHAVE_PAGINA) || 'dashboard'; } catch(e){ return 'dashboard'; }
-}
-// Restaura a sessão salva (se houver) assim que a página carrega, pulando a tela de login
-// e navegando direto para a última seção visitada.
-function restaurarSessaoLocal(){
-  var sessaoSalva = obterSessaoLocal();
-  if(!sessaoSalva){ return; }
-  usuarioLogado = sessaoSalva;
-  document.getElementById('loginContainer').style.display='none';
-  document.getElementById('appContainer').classList.add('active');
-  document.getElementById('userName').textContent = sessaoSalva.nome;
-  document.getElementById('userRole').textContent = sessaoSalva.setor + ' (' + sessaoSalva.perfil + ')';
-  aplicarPermissoes(sessaoSalva.perfil,function(){
-    var paginaSalva = obterPaginaAtualLocal();
-    var navItemSalvo = document.querySelector('.nav-item[data-page="'+paginaSalva+'"]');
-    if(navItemSalvo && !navItemSalvo.classList.contains('no-access')){
-      navItemSalvo.click();
-    } else if(usuarioLogado.permissoes && usuarioLogado.permissoes.Dashboard && usuarioLogado.permissoes.Dashboard.permitido){
-      carregarDashboard();
-    }
-  });
-}
-// ==================== FIM ITEM 26 ====================
-
 // ==================== LOGIN ====================
 document.getElementById('loginForm').addEventListener('submit',function(e){
   e.preventDefault();
@@ -273,10 +282,6 @@ document.getElementById('loginForm').addEventListener('submit',function(e){
     hideLoading();
     if(result.sucesso){
       usuarioLogado=result.usuario;
-      // ===== ITEM 26: guarda a sessão localmente para sobreviver a um refresh da página =====
-      salvarSessaoLocal(result.usuario);
-      salvarPaginaAtualLocal('dashboard');
-      // ===== FIM ITEM 26 =====
       document.getElementById('loginContainer').style.display='none';
       document.getElementById('appContainer').classList.add('active');
       document.getElementById('userName').textContent=result.usuario.nome;
@@ -305,9 +310,6 @@ document.getElementById('loginForm').addEventListener('submit',function(e){
 
 document.getElementById('btnLogout').addEventListener('click',function(){
   usuarioLogado=null;produtosCache=[];dashboardCache=null;
-  // ===== ITEM 26: remove a sessão salva ao encerrar a sessão manualmente =====
-  limparSessaoLocal();
-  // ===== FIM ITEM 26 =====
   document.getElementById('appContainer').classList.remove('active');
   document.getElementById('loginContainer').style.display='flex';
   document.getElementById('loginUsuario').value='';
@@ -328,9 +330,6 @@ document.querySelectorAll('.nav-item').forEach(function(item){
     document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
     document.getElementById('page'+page.charAt(0).toUpperCase()+page.slice(1)).classList.add('active');
     this.classList.add('active');
-    // ===== ITEM 26: memoriza a última tela visitada para restaurar após um refresh =====
-    salvarPaginaAtualLocal(page);
-    // ===== FIM ITEM 26 =====
     if(page==='dashboard')carregarDashboard();
     if(page==='estoque'){carregarDadosAuxiliares();carregarProdutos();}
     if(page==='relatorios')gerarRelatorio();
@@ -450,18 +449,54 @@ function preencherSelectPerfis(){
 
 // ==================== USUÁRIOS DO SISTEMA (CRUD) ====================
 function carregarUsuarios(){
+  if (!usuarioLogado) return;
   google.script.run
-  .withSuccessHandler(function(result){if(result.sucesso){usuariosCache=result.usuarios;renderizarTabelaUsuarios();}else{showToast(result.mensagem,'error');}})
-  .withFailureHandler(function(error){showToast('Erro ao carregar usuários!','error');})
-  .getUsuarios();
+  .withSuccessHandler(function(result){
+    if(result.sucesso){
+      usuariosCache = result.usuarios;
+      renderizarTabelaUsuarios();
+    } else {
+      showToast('Erro ao carregar usuários: ' + result.mensagem, 'error');
+    }
+  })
+  .withFailureHandler(function(error){
+    showToast('Erro de comunicação ao carregar usuários.', 'error');
+  })
+  .getUsuarios(usuarioLogado.usuario, usuarioLogado.perfil, usuarioLogado.loja);
 }
+
 function renderizarTabelaUsuarios(){
   var tbody=document.getElementById('tbodyUsuarios');
   var empty=document.getElementById('emptyUsuarios');
   if(usuariosCache.length===0){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
+  var isGerente = (usuarioLogado && usuarioLogado.perfil === 'Gerente');
+  var isMaster = (usuarioLogado && usuarioLogado.usuario === 'Master');
   tbody.innerHTML=usuariosCache.map(function(u){
     var statusBadge=u.status==='Ativo'?'<span class="badge badge-full">Ativo</span>':'<span class="badge badge-none">Inativo</span>';
+    var podeEditar = false;
+    var podeExcluir = false;
+    if (isMaster) {
+      // Master não pode editar a si mesmo (já foi filtrado, mas segurança)
+      if (u.usuario !== 'Master') {
+        podeEditar = true;
+        podeExcluir = true;
+      }
+    } else if (isGerente) {
+      if (u.usuario !== 'Master' && u.loja === usuarioLogado.loja) {
+        if (usuarioLogado.permissoes && usuarioLogado.permissoes.Configuracoes && usuarioLogado.permissoes.Configuracoes.nivel === 'FULL') {
+          podeEditar = true;
+          podeExcluir = true;
+        }
+      }
+    }
+    var acoes = '';
+    if (podeEditar) {
+      acoes += '<button class="btn-sm btn-edit" data-action="edit-usuario" data-linha="'+u.linha+'"><i class="fas fa-edit"></i></button>';
+    }
+    if (podeExcluir) {
+      acoes += '<button class="btn-sm btn-delete" data-action="delete-usuario" data-linha="'+u.linha+'"><i class="fas fa-trash"></i></button>';
+    }
     return'<tr>'+
       '<td data-label="Nome">'+u.nome+'</td>'+
       '<td data-label="Usuário">'+u.usuario+'</td>'+
@@ -470,13 +505,11 @@ function renderizarTabelaUsuarios(){
       '<td data-label="Status">'+statusBadge+'</td>'+
       '<td data-label="Nome da loja">'+(u.loja||'-')+'</td>'+
       '<td data-label="Último Acesso">'+(u.ultimoAcesso||'-')+'</td>'+
-      '<td data-label="Ações"><div class="actions">'+
-      '<button class="btn-sm btn-edit" data-action="edit-usuario" data-linha="'+u.linha+'"><i class="fas fa-edit"></i></button>'+
-      '<button class="btn-sm btn-delete" data-action="delete-usuario" data-linha="'+u.linha+'"><i class="fas fa-trash"></i></button>'+
-      '</div></td>'+
+      '<td data-label="Ações"><div class="actions">'+acoes+'</div></td>'+
       '</tr>';
   }).join('');
 }
+
 function abrirModalUsuario(){
   document.getElementById('formUsuario').reset();
   document.getElementById('usuarioLinha').value='';
@@ -500,6 +533,16 @@ function preencherSelectLojaUsuario(){
 function editarUsuario(linha){
   var u=usuariosCache.find(function(item){return item.linha===linha;});
   if(!u)return;
+  // Impede edição do Master (redundante, mas seguro)
+  if (u.usuario === 'Master') {
+    showToast('O usuário Master não pode ser editado.','error');
+    return;
+  }
+  // Se for Gerente, verifica se o usuário é da mesma loja
+  if (usuarioLogado && usuarioLogado.perfil === 'Gerente' && u.loja !== usuarioLogado.loja) {
+    showToast('Você não tem permissão para editar usuários de outra loja.','error');
+    return;
+  }
   preencherSelectPerfis();
   preencherSelectLojaUsuario();
   document.getElementById('modalUsuarioTitle').textContent='Editar Usuário';
@@ -513,6 +556,12 @@ function editarUsuario(linha){
   document.getElementById('usuarioPerfilSelect').value=u.perfil;
   document.getElementById('usuarioStatus').value=u.status;
   document.getElementById('usuarioLoja').value=u.loja||'';
+  // Se for Gerente, desabilita o campo loja (forçado)
+  if (usuarioLogado && usuarioLogado.perfil === 'Gerente') {
+    document.getElementById('usuarioLoja').disabled = true;
+  } else {
+    document.getElementById('usuarioLoja').disabled = false;
+  }
   document.getElementById('modalUsuario').classList.add('active');
 }
 function salvarUsuarioFront(){
@@ -538,7 +587,7 @@ function salvarUsuarioFront(){
   google.script.run
   .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');fecharModalUsuario();carregarUsuarios();}else{showToast(result.mensagem,'error');}})
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar usuário!','error');})
-  .salvarUsuario(payload,usuarioLogado?usuarioLogado.perfil:null);
+  .salvarUsuario(payload, usuarioLogado.usuario, usuarioLogado.perfil, usuarioLogado.loja);
 }
 function excluirUsuarioFront(linha){
   if(!confirm('Deseja realmente excluir este usuário?'))return;
@@ -546,7 +595,7 @@ function excluirUsuarioFront(linha){
   google.script.run
   .withSuccessHandler(function(result){hideLoading();if(result.sucesso){showToast(result.mensagem,'success');carregarUsuarios();}else{showToast(result.mensagem,'error');}})
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao excluir usuário!','error');})
-  .excluirUsuario(linha,usuarioLogado?usuarioLogado.perfil:null);
+  .excluirUsuario(linha, usuarioLogado.usuario, usuarioLogado.perfil, usuarioLogado.loja);
 }
 
 // ==================== DADOS AUXILIARES ====================
@@ -601,12 +650,6 @@ function preencherSelectSubcategoriasPorCategoria(idSelect,categoria){
   lista.forEach(function(item){var label=categoria?item.subcategoria:item.subcategoria+' ('+item.categoria+')';html+='<option value="'+item.subcategoria+'">'+label+'</option>';});
   select.innerHTML=html;
 }
-// ===== CORREÇÃO ITEM 26/27: função responsável por popular o select de Subcategoria =====
-// do modal de Produto conforme a Categoria escolhida. Ela era chamada em 3 pontos do
-// código (abrir modal para novo produto vindo do scanner, editarProduto e no listener de
-// mudança da Categoria) mas nunca havia sido definida, o que gerava um erro de referência
-// (ReferenceError) e interrompia a execução das funções que a chamavam - por isso a
-// Subcategoria nunca era preenchida e o botão Editar de produtos também não abria o modal.
 function atualizarSubcategoriasPorCategoria(categoria){
   var select=document.getElementById('produtoSubcategoria');
   if(!select)return;
@@ -618,7 +661,6 @@ function atualizarSubcategoriasPorCategoria(categoria){
   select.innerHTML=html;
   if(lista.some(function(item){return item.subcategoria===valorAtual;}))select.value=valorAtual;
 }
-// ===== FIM CORREÇÃO ITEM 26/27 =====
 function preencherSelectEstabelecimentos(){
   var select=document.getElementById('filterEstabelecimento');
   var prodSelect=document.getElementById('produtoEstabelecimento');
@@ -642,7 +684,6 @@ function preencherSelectFornecedores(){
   select.innerHTML=html;prodSelect.innerHTML=prodHtml;relSelect.innerHTML=relHtml;
 }
 
-// ===== FUNÇÃO PARA PREENCHER O DATALIST DE PRODUTOS =====
 function preencherListaProdutos(){
   var datalist = document.getElementById('produtoList');
   if(!datalist) return;
@@ -692,16 +733,6 @@ function abrirModalCadastro(tipo){
     listaContainer.style.display='block';
     var podeFull = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel === 'FULL';
     var podeEditar = usuarioLogado && usuarioLogado.permissoes && usuarioLogado.permissoes.Estoque && usuarioLogado.permissoes.Estoque.nivel !== 'VIEW' && usuarioLogado.permissoes.Estoque.nivel !== 'NONE';
-    // ===== CORREÇÃO ITEM 28b: os botões de Editar/Excluir desta lista usavam atributos
-    // onclick="..." apontando para funções (editarCadastroItemAbrir/excluirCadastroItem)
-    // que existem dentro do IIFE (function(){...})() que envolve todo o JavaScript.html.
-    // Atributos onclick inline são executados no escopo global da página, então eles nunca
-    // enxergavam essas funções (ficam "presas" dentro do closure) - por isso os cliques não
-    // faziam nada. A solução, no mesmo padrão já usado pelas tabelas de Produtos/Perfis/
-    // Usuários, é usar data-attributes + um listener delegado (adicionado mais abaixo, junto
-    // com os demais listeners do DOMContentLoaded), que roda dentro do closure e por isso
-    // tem acesso direto às funções. Também evita quebrar o HTML quando o nome cadastrado
-    // contiver aspas.
     lista.innerHTML=dados.map(function(item){
       var label='',v1='',v2='';
       if(tipo==='categoria'){label=item.categoria;v1=item.categoria;}
@@ -714,7 +745,6 @@ function abrirModalCadastro(tipo){
       var deleteBtn = podeFull ? '<button type="button" class="btn-delete-item" data-action="excluir-cadastro" data-tipo="'+tipo+'" data-v1="'+v1Attr+'" data-v2="'+v2Attr+'" title="Excluir"><i class="fas fa-times"></i></button>' : '';
       return'<li><span>'+label+'</span><span>'+editBtn+deleteBtn+'</span></li>';
     }).join('');
-    // ===== FIM CORREÇÃO ITEM 28b =====
   }else{listaContainer.style.display='none';}
   document.getElementById('modalCadastro').classList.add('active');
   setTimeout(function(){document.getElementById('cadastroInput').focus();},100);
@@ -813,7 +843,7 @@ function carregarDashboard(){
     else{showToast(result.mensagem,'error');}
   })
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao carregar dashboard!','error');})
-  .getDashboardData();
+  .getDashboardData(usuarioLogado.perfil, usuarioLogado.loja);
 }
 function renderizarDashboard(data){
   var resumo=data.resumo;
@@ -903,7 +933,7 @@ function carregarProdutos(){
     hideLoading();
     if(result.sucesso){
       produtosCache=result.produtos;
-      preencherListaProdutos(); // preenche o datalist
+      preencherListaProdutos();
       filtrarProdutos();
       atualizarStatsScanner();
     } else {
@@ -911,7 +941,7 @@ function carregarProdutos(){
     }
   })
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao carregar produtos!','error');})
-  .getProdutos();
+  .getProdutos(usuarioLogado.perfil, usuarioLogado.loja);
 }
 
 function filtrarProdutos(){
@@ -985,7 +1015,6 @@ function renderizarTabelaProdutos(produtos){
   }).join('');
 }
 
-// ========== ATUALIZAÇÃO DAS AÇÕES RÁPIDAS: REBAIXA E RESOLVIDO ==========
 function alterarStatusInline(linha, tipo, novoValor, toggleEl, valorAnterior){
   if(!verificarAcao('update','Estoque')){
     if(toggleEl){reverterToggle(toggleEl,valorAnterior);}
@@ -1017,7 +1046,7 @@ function alterarStatusInline(linha, tipo, novoValor, toggleEl, valorAnterior){
     showToast('Erro ao atualizar '+mensagemCampo.toLowerCase()+'!','error');
     if(toggleEl){reverterToggle(toggleEl,valorAnterior);}
   })
-  .salvarProduto(obj,usuarioLogado?usuarioLogado.perfil:null);
+  .salvarProduto(obj, usuarioLogado.perfil, usuarioLogado.loja);
 }
 function reverterToggle(toggleEl,valorAnterior){
   toggleEl.setAttribute('data-valor',valorAnterior);
@@ -1026,7 +1055,6 @@ function reverterToggle(toggleEl,valorAnterior){
   toggleEl.classList.toggle('toggle-nao',valorAnterior==='Não');
 }
 
-// ========== EXCLUIR ITENS MARCADOS COMO RESOLVIDOS ==========
 function excluirResolvidos(){
   if(!verificarAcao('delete','Estoque'))return;
   var resolvidos = produtosCache.filter(function(p){ return p.resolvido === 'Sim'; });
@@ -1034,6 +1062,7 @@ function excluirResolvidos(){
   document.getElementById('confirmacaoMensagem').textContent =
     'Deseja excluir os itens resolvidos? (' + resolvidos.length + ' item(ns))';
   confirmacaoTipo = 'lote';
+  restaurarTituloConfirmacao();
   document.getElementById('modalConfirmacao').classList.add('active');
 }
 
@@ -1056,7 +1085,7 @@ function executarExclusaoResolvidos() {
       fecharModalConfirmacao();
       showToast('Erro ao excluir itens resolvidos!','error');
     })
-    .excluirProdutosResolvidos(usuarioLogado ? usuarioLogado.perfil : null);
+    .excluirProdutosResolvidos(usuarioLogado.perfil, usuarioLogado.loja);
 }
 
 // ==================== MODAL PRODUTO ====================
@@ -1078,6 +1107,15 @@ function abrirModalProduto(resetar){
     document.getElementById('produtoSubcategoria').innerHTML='<option value="">Selecione...</option>';
     document.getElementById('produtoQuebra').value='Não';
   }
+
+  var selectLoja = document.getElementById('produtoEstabelecimento');
+  if (usuarioLogado && usuarioLogado.perfil !== 'Master') {
+    selectLoja.value = usuarioLogado.loja || '';
+    selectLoja.disabled = true;
+  } else {
+    selectLoja.disabled = false;
+  }
+
   document.getElementById('modalProduto').classList.add('active');
 }
 function fecharModalProduto(){document.getElementById('modalProduto').classList.remove('active');}
@@ -1094,6 +1132,14 @@ function editarProduto(linha){
   if(!verificarAcao('update','Estoque'))return;
   var produto=produtosCache.find(function(p){return p.linha===linha;});
   if(!produto)return;
+
+  if (usuarioLogado && usuarioLogado.perfil !== 'Master' && usuarioLogado.loja) {
+    if (produto.estabelecimento !== usuarioLogado.loja) {
+      showToast('Você não tem permissão para editar produtos de outra loja.', 'error');
+      return;
+    }
+  }
+
   document.getElementById('modalProdutoTitle').textContent='Editar Produto';
   definirCamposScannerProduto(true);
   document.getElementById('produtoLinha').value=produto.linha;
@@ -1109,85 +1155,105 @@ function editarProduto(linha){
   document.getElementById('produtoFornecedor').value=produto.fornecedor||'';
   document.getElementById('produtoEstabelecimento').value=produto.estabelecimento||'';
   document.getElementById('produtoQuebra').value=produto.quebra==='Sim'?'Sim':'Não';
+
+  var selectLoja = document.getElementById('produtoEstabelecimento');
+  if (usuarioLogado && usuarioLogado.perfil !== 'Master') {
+    selectLoja.value = usuarioLogado.loja || '';
+    selectLoja.disabled = true;
+  } else {
+    selectLoja.disabled = false;
+  }
+
   document.getElementById('modalProduto').classList.add('active');
 }
 
-// ========== SALVAR PRODUTO ==========
 function salvarProduto(){
   if(!verificarAcao(document.getElementById('produtoLinha').value?'update':'create','Estoque'))return;
 
   var codigo = document.getElementById('produtoCodigo').value.trim();
-  var codigoValidado = validarCodigoBarras(codigo);
-  if (codigoValidado === null) return;
+  validarCodigoBarrasAsync(codigo, function(codigoValidado) {
+    if (codigoValidado === null) return;
 
-  var produto=document.getElementById('produtoNome').value.trim();
-  var quantidade=document.getElementById('produtoQuantidade').value;
-  var dataValidade=document.getElementById('produtoDataValidade').value;
-  var categoria=document.getElementById('produtoCategoria').value;
-  var subcategoria=document.getElementById('produtoSubcategoria').value;
-  var fornecedor=document.getElementById('produtoFornecedor').value;
-  var estabelecimento=document.getElementById('produtoEstabelecimento').value;
-  var fornecedorPendente = modalProdutoCamposCompletos && !fornecedor;
-  if(!codigoValidado||!produto||!quantidade||!dataValidade||!categoria||!estabelecimento||fornecedorPendente){
-    showToast('Preencha todos os campos obrigatórios!','error');return;
-  }
-  var linhaAtual=document.getElementById('produtoLinha').value;
-  var produtoExistente=linhaAtual?produtosCache.find(function(p){return p.linha===parseInt(linhaAtual);}):null;
-
-  var obj = {
-    linha: linhaAtual || null,
-    codigo: codigoValidado,
-    produto: produto,
-    quantidade: parseInt(quantidade),
-    dataValidade: dataValidade,
-    categoria: categoria,
-    subcategoria: subcategoria,
-    precoCusto: parseFloat(document.getElementById('produtoPrecoCusto').value) || 0,
-    precoVenda: parseFloat(document.getElementById('produtoPrecoVenda').value) || 0,
-    fornecedor: fornecedor,
-    estabelecimento: estabelecimento,
-    quebra: document.getElementById('produtoQuebra').value === 'Sim' ? 'Sim' : 'Não',
-    resolvido: produtoExistente ? produtoExistente.resolvido : 'Não',
-    cadastradoPor: (usuarioLogado && usuarioLogado.nome) ? usuarioLogado.nome : '',
-    funcao: (usuarioLogado && usuarioLogado.setor) ? usuarioLogado.setor : ''
-  };
-
-  showLoading('Salvando produto...');
-  google.script.run
-  .withSuccessHandler(function(result){
-    hideLoading();
-    if(result.sucesso){
-      fecharModalProduto();
-      showToast(result.mensagem,'success');
-      carregarProdutos();
-      if(dashboardCache) carregarDashboard();
-    }else{
-      showToast(result.mensagem,'error');
-      var campoCodigo=document.getElementById('produtoCodigo');
-      campoCodigo.value='';
-      campoCodigo.focus();
+    var produto=document.getElementById('produtoNome').value.trim();
+    var quantidade=document.getElementById('produtoQuantidade').value;
+    var dataValidade=document.getElementById('produtoDataValidade').value;
+    var categoria=document.getElementById('produtoCategoria').value;
+    var subcategoria=document.getElementById('produtoSubcategoria').value;
+    var fornecedor=document.getElementById('produtoFornecedor').value;
+    var estabelecimento=document.getElementById('produtoEstabelecimento').value;
+    var fornecedorPendente = modalProdutoCamposCompletos && !fornecedor;
+    if(!codigoValidado||!produto||!quantidade||!dataValidade||!categoria||!estabelecimento||fornecedorPendente){
+      showToast('Preencha todos os campos obrigatórios!','error');return;
     }
-  })
-  .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar produto!','error');})
-  .salvarProduto(obj, usuarioLogado ? usuarioLogado.perfil : null);
+    var linhaAtual=document.getElementById('produtoLinha').value;
+    var produtoExistente=linhaAtual?produtosCache.find(function(p){return p.linha===parseInt(linhaAtual);}):null;
+
+    var obj = {
+      linha: linhaAtual || null,
+      codigo: codigoValidado,
+      produto: produto,
+      quantidade: parseInt(quantidade),
+      dataValidade: dataValidade,
+      categoria: categoria,
+      subcategoria: subcategoria,
+      precoCusto: parseFloat(document.getElementById('produtoPrecoCusto').value) || 0,
+      precoVenda: parseFloat(document.getElementById('produtoPrecoVenda').value) || 0,
+      fornecedor: fornecedor,
+      estabelecimento: estabelecimento,
+      quebra: document.getElementById('produtoQuebra').value === 'Sim' ? 'Sim' : 'Não',
+      resolvido: produtoExistente ? produtoExistente.resolvido : 'Não',
+      cadastradoPor: (usuarioLogado && usuarioLogado.nome) ? usuarioLogado.nome : '',
+      funcao: (usuarioLogado && usuarioLogado.setor) ? usuarioLogado.setor : ''
+    };
+
+    showLoading('Salvando produto...');
+    google.script.run
+    .withSuccessHandler(function(result){
+      hideLoading();
+      if(result.sucesso){
+        fecharModalProduto();
+        showToast(result.mensagem,'success');
+        carregarProdutos();
+        if(dashboardCache) carregarDashboard();
+      }else{
+        showToast(result.mensagem,'error');
+        var campoCodigo=document.getElementById('produtoCodigo');
+        campoCodigo.value='';
+        campoCodigo.focus();
+      }
+    })
+    .withFailureHandler(function(error){hideLoading();showToast('Erro ao salvar produto!','error');})
+    .salvarProduto(obj, usuarioLogado.perfil, usuarioLogado.loja);
+  });
 }
 
-// ==================== EXCLUSÃO ====================
 function excluirProduto(linha){
   if(!verificarAcao('delete','Estoque'))return;
   linhaExcluir=linha;
+  restaurarTituloConfirmacao();
   document.getElementById('confirmacaoMensagem').textContent = 'Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.';
   confirmacaoTipo = null;
   document.getElementById('modalConfirmacao').classList.add('active');
 }
-function fecharModalConfirmacao(){linhaExcluir=null;confirmacaoTipo=null;document.getElementById('modalConfirmacao').classList.remove('active');}
+function fecharModalConfirmacao(){
+  if (confirmacaoTipo === 'digitos' && callbackConfirmacaoDigitos) {
+    callbackConfirmacaoDigitos(null);
+    callbackConfirmacaoDigitos = null;
+    codigoPendenteConfirmacao = null;
+    restaurarTituloConfirmacao();
+  }
+  linhaExcluir=null;
+  confirmacaoTipo=null;
+  restaurarTituloConfirmacao();
+  document.getElementById('modalConfirmacao').classList.remove('active');
+}
 function confirmarExclusao(){
   if(!linhaExcluir) return;
   showLoading('Excluindo produto...');
   google.script.run
   .withSuccessHandler(function(result){hideLoading();fecharModalConfirmacao();if(result.sucesso){showToast(result.mensagem,'success');carregarProdutos();if(dashboardCache) carregarDashboard();}else{showToast(result.mensagem,'error');}})
   .withFailureHandler(function(error){hideLoading();fecharModalConfirmacao();showToast('Erro ao excluir produto!','error');})
-  .excluirProduto(linhaExcluir,usuarioLogado?usuarioLogado.perfil:null);
+  .excluirProduto(linhaExcluir, usuarioLogado.perfil, usuarioLogado.loja);
 }
 
 // ==================== RELATÓRIOS ====================
@@ -1204,7 +1270,7 @@ function gerarRelatorio(){
   google.script.run
   .withSuccessHandler(function(result){hideLoading();if(result.sucesso){renderizarRelatorio(result.produtos,tipo);}else{showToast(result.mensagem,'error');}})
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao gerar relatório!','error');})
-  .gerarRelatorio(tipo,parseInt(dias),categoria,subcategoria,estabelecimento,fornecedor);
+  .gerarRelatorio(tipo, parseInt(dias), categoria, subcategoria, estabelecimento, fornecedor, usuarioLogado.perfil, usuarioLogado.loja);
 }
 function renderizarRelatorio(produtos,tipo){
   var tbody=document.getElementById('tbodyRelatorio');
@@ -1227,7 +1293,7 @@ function exportarRelatorio(){
   google.script.run
   .withSuccessHandler(function(result){hideLoading();if(result.sucesso){var blob=new Blob([result.csv],{type:'text/csv;charset=utf-8;'});var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='relatorio_'+tipo+'_'+new Date().toISOString().split('T')[0]+'.csv';link.click();showToast('Relatório CSV exportado com sucesso! ('+result.total+' registros)','success');}else{showToast(result.mensagem,'error');}})
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao exportar CSV!','error');})
-  .exportarRelatorioCSV(tipo,parseInt(dias),categoria,subcategoria,estabelecimento,fornecedor);
+  .exportarRelatorioCSV(tipo, parseInt(dias), categoria, subcategoria, estabelecimento, fornecedor, usuarioLogado.perfil, usuarioLogado.loja);
 }
 function exportarRelatorioPDF(){
   if(!verificarAcao('view','Relatorios'))return;
@@ -1241,7 +1307,7 @@ function exportarRelatorioPDF(){
   google.script.run
   .withSuccessHandler(function(result){hideLoading();if(result.sucesso){var byteCharacters=atob(result.pdf);var byteNumbers=new Array(byteCharacters.length);for(var i=0;i<byteCharacters.length;i++){byteNumbers[i]=byteCharacters.charCodeAt(i);}var byteArray=new Uint8Array(byteNumbers);var blob=new Blob([byteArray],{type:'application/pdf'});var link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='relatorio_'+tipo+'_'+new Date().toISOString().split('T')[0]+'.pdf';link.click();showToast('Relatório PDF exportado com sucesso! ('+result.total+' registros)','success');}else{showToast(result.mensagem,'error');}})
   .withFailureHandler(function(error){hideLoading();showToast('Erro ao exportar PDF!','error');})
-  .exportarRelatorioPDF(tipo,parseInt(dias),categoria,subcategoria,estabelecimento,fornecedor);
+  .exportarRelatorioPDF(tipo, parseInt(dias), categoria, subcategoria, estabelecimento, fornecedor, usuarioLogado.perfil, usuarioLogado.loja);
 }
 
 // ==================== SCANNER ====================
@@ -1282,6 +1348,12 @@ function inicializarTecladoScanner() {
   if (inputManual) inputManual.value = '';
   var painelManual = document.getElementById('scannerManualPanel');
   if (painelManual) painelManual.style.display = 'none';
+
+  // ===== ITEM 30: registra os listeners do teclado/numpad do Scanner apenas UMA vez =====
+  // (antes, toda vez que a página Scanner era aberta, novos listeners eram somados aos
+  // já existentes, fazendo o mesmo código de barras disparar validações duplicadas)
+  if (tecladoScannerInicializado) return;
+  tecladoScannerInicializado = true;
 
   document.querySelectorAll('.numpad-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
@@ -1331,7 +1403,6 @@ function inicializarTecladoScanner() {
     });
   }
 
-  // ===== LISTENER GLOBAL CORRIGIDO =====
   document.addEventListener('keydown', function(e) {
     var active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) {
@@ -1434,71 +1505,90 @@ function initScannerPage(codigoParam) {
 }
 
 function executarScanManual(){
+  // ===== ITEM 30: evita execuções duplicadas/concorrentes para o mesmo código =====
+  if (scanManualEmAndamento) return;
+  scanManualEmAndamento = true;
+
   var display=document.getElementById('scannerDisplay');
   var codigo=display?display.textContent.trim():'';
-  var codigoValidado = validarCodigoBarras(codigo);
-  if (codigoValidado === null) return;
 
-  showLoading('Buscando informações do produto...');
-  google.script.run
-  .withSuccessHandler(function(resposta){
-    hideLoading();
-    if(resposta.sucesso){
-      // ===== ITEM 24: log de diagnóstico da consulta à Cosmos Bluesoft (ver console do navegador, F12) =====
-      if(resposta.cosmosDebug){
-        console.log('[Cosmos Bluesoft] Código '+resposta.codigo+': '+resposta.cosmosDebug);
-      }
-      // ===== FIM ITEM 24 =====
-      ultimoCodigoScanner=resposta.codigo;
-      ultimoNomeScanner=(resposta.descricao&&resposta.descricao!=='Não localizado na internet'&&resposta.descricao.indexOf('Erro')!==0&&resposta.descricao.indexOf('Não localizado')!==0)?resposta.descricao:'';
-      var ultimaCategoria = resposta.categoria || '';
-      var ultimaSubcategoria = resposta.subcategoria || '';
+  validarCodigoBarrasAsync(codigo, function(codigoValidado) {
+    if (codigoValidado === null) { scanManualEmAndamento = false; return; }
 
-      // Navega para a página Estoque
-      document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
-      document.querySelector('.nav-item[data-page="estoque"]').classList.add('active');
-      document.querySelectorAll('.page-section').forEach(function(s){s.classList.remove('active');});
-      document.getElementById('pageEstoque').classList.add('active');
+    showLoading('Buscando informações do produto...');
+    google.script.run
+    .withSuccessHandler(function(resposta){
+      hideLoading();
+      if(resposta.sucesso){
+        ultimoCodigoScanner=resposta.codigo;
+        var nomeProduto = resposta.descricao || '';
+        var categoria = resposta.categoria || '';
+        var subcategoria = resposta.subcategoria || '';
+        var encontradoNoEstoque = resposta.encontradoNoEstoque || false;
 
-      document.getElementById('produtoCodigo').value=resposta.codigo;
-      document.getElementById('produtoNome').value=ultimoNomeScanner;
-      if(ultimaCategoria){
-        document.getElementById('produtoCategoria').value=ultimaCategoria;
-        atualizarSubcategoriasPorCategoria(ultimaCategoria);
-        document.getElementById('produtoSubcategoria').value=ultimaSubcategoria||'';
+        document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+        document.querySelector('.nav-item[data-page="estoque"]').classList.add('active');
+        document.querySelectorAll('.page-section').forEach(function(s){s.classList.remove('active');});
+        document.getElementById('pageEstoque').classList.add('active');
+
+        document.getElementById('produtoCodigo').value=resposta.codigo;
+        document.getElementById('produtoNome').value=nomeProduto;
+        if(categoria){
+          document.getElementById('produtoCategoria').value=categoria;
+          atualizarSubcategoriasPorCategoria(categoria);
+          document.getElementById('produtoSubcategoria').value=subcategoria||'';
+        }else{
+          document.getElementById('produtoCategoria').value='';
+          document.getElementById('produtoSubcategoria').innerHTML='<option value="">Selecione...</option>';
+        }
+        if(usuarioLogado && usuarioLogado.loja){
+          document.getElementById('produtoEstabelecimento').value=usuarioLogado.loja;
+        }
+        document.getElementById('produtoQuantidade').value='';
+        document.getElementById('produtoDataValidade').value='';
+        document.getElementById('produtoPrecoCusto').value='';
+        document.getElementById('produtoPrecoVenda').value='';
+        document.getElementById('produtoFornecedor').value='';
+        document.getElementById('produtoLinha').value='';
+        document.getElementById('produtoQuebra').value='Não';
+        document.getElementById('modalProdutoTitle').textContent = encontradoNoEstoque ? 'Produto Encontrado no Estoque (via Scanner)' : 'Novo Produto (via Scanner)';
+        definirCamposScannerProduto(false);
+
+        var selectLoja = document.getElementById('produtoEstabelecimento');
+        if (usuarioLogado && usuarioLogado.perfil !== 'Master') {
+          selectLoja.value = usuarioLogado.loja || '';
+          selectLoja.disabled = true;
+        } else {
+          selectLoja.disabled = false;
+        }
+
+        document.getElementById('modalProduto').classList.add('active');
+
+        setTimeout(function() {
+          document.getElementById('produtoQuantidade').focus();
+        }, 300);
+
+        if (encontradoNoEstoque) {
+          showToast('Produto encontrado no estoque! Campos pré-preenchidos.', 'success');
+        } else {
+          if (nomeProduto && nomeProduto !== 'Não localizado na base externa' && !nomeProduto.startsWith('Erro')) {
+            showToast('Código não encontrado no estoque. Usando dados da base externa.', 'info');
+          } else {
+            showToast('Código não encontrado. Preencha os dados manualmente.', 'warning');
+          }
+        }
       }else{
-        document.getElementById('produtoCategoria').value='';
-        document.getElementById('produtoSubcategoria').innerHTML='<option value="">Selecione...</option>';
+        showToast('Erro ao processar código: '+resposta.mensagem, 'error');
       }
-      if(usuarioLogado && usuarioLogado.loja){
-        document.getElementById('produtoEstabelecimento').value=usuarioLogado.loja;
-      }
-      document.getElementById('produtoQuantidade').value='';
-      document.getElementById('produtoDataValidade').value='';
-      document.getElementById('produtoPrecoCusto').value='';
-      document.getElementById('produtoPrecoVenda').value='';
-      document.getElementById('produtoFornecedor').value='';
-      document.getElementById('produtoLinha').value='';
-      document.getElementById('produtoQuebra').value='Não';
-      document.getElementById('modalProdutoTitle').textContent='Novo Produto (via Scanner)';
-      definirCamposScannerProduto(false);
-
-      document.getElementById('modalProduto').classList.add('active');
-
-      setTimeout(function() {
-        document.getElementById('produtoQuantidade').focus();
-      }, 300);
-
-      showToast('Código detectado! Preencha os campos obrigatórios.', 'success');
-    }else{
-      showToast('Erro ao processar código: '+resposta.mensagem, 'error');
-    }
-  })
-  .withFailureHandler(function(err){
-    hideLoading();
-    showToast('Erro na comunicação: '+err.message, 'error');
-  })
-  .salvarDadosNoSheets(codigoValidado);
+      scanManualEmAndamento = false;
+    })
+    .withFailureHandler(function(err){
+      hideLoading();
+      showToast('Erro na comunicação: '+err.message, 'error');
+      scanManualEmAndamento = false;
+    })
+    .salvarDadosNoSheets(codigoValidado);
+  });
 }
 
 function carregarHistoricoScanner(){
@@ -1538,11 +1628,6 @@ function renderizarTabelaHistoricoScanner(dados){
 document.addEventListener('DOMContentLoaded',function(){
   hideLoading();
 
-  // ===== ITEM 26: restaura sessão e última tela salvas (se o usuário já estava logado antes do refresh) =====
-  restaurarSessaoLocal();
-  // ===== FIM ITEM 26 =====
-
-  // Listener para o campo de pesquisa de produto (input ao invés de change)
   document.getElementById('filterProduto').addEventListener('input', filtrarProdutos);
 
   document.getElementById('filterCategoria').addEventListener('change',function(){preencherSelectSubcategoriasPorCategoria('filterSubcategoria',this.value);filtrarProdutos();});
@@ -1587,8 +1672,6 @@ document.addEventListener('DOMContentLoaded',function(){
   document.getElementById('btnFecharCadastro').addEventListener('click',fecharModalCadastro);
   document.getElementById('btnCancelarEdicaoCadastro').addEventListener('click',cancelarEdicaoCadastro);
   document.getElementById('btnSalvarCadastro').addEventListener('click',salvarCadastro);
-  // ===== CORREÇÃO ITEM 28b: listener delegado para Editar/Excluir da lista de Categoria/
-  // Subcategoria/Loja/Fornecedor (ver comentário na função abrirModalCadastro) =====
   document.getElementById('cadastroLista').addEventListener('click',function(e){
     var btn=e.target.closest('[data-action]');
     if(!btn)return;
@@ -1599,10 +1682,21 @@ document.addEventListener('DOMContentLoaded',function(){
     if(action==='editar-cadastro')editarCadastroItemAbrir(tipo,v1,v2);
     else if(action==='excluir-cadastro')excluirCadastroItem(tipo,v1,v2);
   });
-  // ===== FIM CORREÇÃO ITEM 28b =====
   document.getElementById('btnFecharConfirmacao').addEventListener('click',fecharModalConfirmacao);
   document.getElementById('btnCancelarExclusao').addEventListener('click',fecharModalConfirmacao);
+
   document.getElementById('btnConfirmarExclusao').addEventListener('click', function() {
+    if (confirmacaoTipo === 'digitos') {
+      if (callbackConfirmacaoDigitos) {
+        callbackConfirmacaoDigitos(codigoPendenteConfirmacao);
+        callbackConfirmacaoDigitos = null;
+        codigoPendenteConfirmacao = null;
+      }
+      restaurarTituloConfirmacao();
+      confirmacaoTipo = null;
+      fecharModalConfirmacao();
+      return;
+    }
     if (confirmacaoTipo === 'lote') {
       confirmacaoTipo = null;
       executarExclusaoResolvidos();
@@ -1610,6 +1704,7 @@ document.addEventListener('DOMContentLoaded',function(){
       confirmarExclusao();
     }
   });
+
   document.getElementById('relatorioTipo').addEventListener('change',gerarRelatorio);
   document.getElementById('relatorioDias').addEventListener('change',gerarRelatorio);
   document.getElementById('filterRelCategoria').addEventListener('change',function(){preencherSelectSubcategoriasPorCategoria('filterRelSubcategoria',this.value);gerarRelatorio();});
