@@ -1,0 +1,25 @@
+const DB=()=>new Promise((ok,er)=>{const r=indexedDB.open('lembretes',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=er});
+const get=async k=>{const d=await DB();return new Promise(ok=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>ok(q.result)})};
+const set=async(k,v)=>{const d=await DB();return new Promise(ok=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=ok})};
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',e=>e.waitUntil(clients.claim()));
+
+// O servidor envia um push vazio quando há lembrete vencido; o texto vem da cópia local (IndexedDB)
+self.addEventListener('push',e=>e.waitUntil((async()=>{
+  const now=Date.now(),items=(await get('items'))||[];let shown=(await get('shown'))||{};
+  const due=items.filter(i=>i.at<=now+30000&&!shown[i.id+':'+i.at]);
+  if(!due.length)return self.registration.showNotification('⏰ Lembrete',{body:'Você tem um lembrete. Toque para abrir.',tag:'generic',requireInteraction:true});
+  if(Object.keys(shown).length>300)shown={};
+  for(const i of due){shown[i.id+':'+i.at]=1;
+    await self.registration.showNotification('⏰ Lembrete',{body:i.text,tag:i.id+':'+i.at,requireInteraction:true,vibrate:[200,100,200],data:{id:i.id},
+      actions:[{action:'done',title:'Concluir'},{action:'snooze',title:'Adiar 10 min'}]})}
+  await set('shown',shown)})()));
+
+self.addEventListener('notificationclick',e=>{e.notification.close();
+  const id=e.notification.data&&e.notification.data.id,a=e.action;
+  e.waitUntil((async()=>{const url=await get('appUrl');let q='';
+    if(id&&(a==='done'||a==='snooze')){q='?act='+a+'&id='+encodeURIComponent(id);
+      let it=(await get('items'))||[];
+      it=a==='done'?it.filter(i=>i.id!==id):it.map(i=>i.id===id?Object.assign({},i,{at:Date.now()+6e5}):i);
+      await set('items',it)}
+    return clients.openWindow(url?url+q:'./bridge.html')})())});
