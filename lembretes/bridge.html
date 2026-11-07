@@ -1,0 +1,46 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Ponte de lembretes</title>
+<style>body{font-family:'Google Sans',Roboto,system-ui,sans-serif;margin:0;padding:24px;background:#FBF8F1;color:#26231B;text-align:center}
+button{min-height:48px;padding:0 22px;border:0;border-radius:24px;background:#B8860B;color:#fff;font-weight:600;font-size:16px;font-family:inherit;margin:6px}
+#mic.on{background:#D93025}p{color:#7A7566}#heard{min-height:48px;font-size:18px;color:#26231B}
+@media(prefers-color-scheme:dark){body{background:#17150F;color:#F2EEE2}#heard{color:#F2EEE2}}</style></head><body>
+<h2>🔔 Lembretes e voz</h2>
+<p id="st">Mantenha esta janela aberta (pode minimizar) para receber os avisos.</p>
+<button id="nt">Ativar notificações</button><br>
+<button id="mic">🎤 Ouvir</button><div id="heard"></div>
+<script>
+const OK=/^https:\/\/([a-z0-9-]+\.)*(googleusercontent|google)\.com$/;
+let app=window.opener,appOrigin=null,reg=null,items=JSON.parse(localStorage.items||'[]'),fired=new Set(),rec=null;
+const $=s=>document.querySelector(s),st=t=>$('#st').textContent=t;
+const post=m=>{if(app&&appOrigin&&!app.closed)app.postMessage(m,appOrigin);else if(m.type==='act'){const q=JSON.parse(localStorage.q||'[]');q.push(m);localStorage.q=JSON.stringify(q)}};
+if(!('Notification' in window)||!('serviceWorker' in navigator))st('Este navegador não suporta notificações. Os avisos aparecerão apenas no app aberto.');
+else navigator.serviceWorker.register('sw.js').then(r=>{reg=r;perm()}).catch(()=>st('Não foi possível ativar o serviço de notificações.'));
+function perm(){if(Notification.permission==='granted'){st('Notificações ativas. Mantenha esta janela aberta.');$('#nt').hidden=true}else if(Notification.permission==='denied'){st('Notificações bloqueadas. Libere nas configurações do navegador para este site.')}}
+$('#nt').onclick=()=>Notification.requestPermission().then(perm);
+function save(){localStorage.items=JSON.stringify(items)}
+function act(m){ // ação vinda da notificação
+  if(m.action==='snooze'){const i=items.find(x=>x.id===m.id);if(i){i.at=Date.now()+6e5;save()}}
+  else if(m.action==='done'){items=items.filter(x=>x.id!==m.id);save()}
+  if(m.action!=='open')post(m);
+}
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='act')act(e.data)});
+function tick(){const now=Date.now();items.forEach(i=>{const k=i.id+':'+i.at;if(i.at<=now&&!fired.has(k)&&reg&&Notification.permission==='granted'){fired.add(k);
+ reg.showNotification('⏰ Lembrete',{body:i.text,tag:i.id,requireInteraction:true,vibrate:[200,100,200],data:{id:i.id},actions:[{action:'done',title:'Concluir'},{action:'snooze',title:'Adiar 10 min'}]})}})}
+setInterval(tick,15000);tick();
+function listen(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!R){post({type:'voice',error:'unsupported'});st('Reconhecimento de voz não suportado neste navegador.');return}
+ if(rec)try{rec.stop()}catch(e){}
+ const r=rec=new R();r.lang='pt-BR';r.interimResults=true;let tx='';
+ r.onresult=e=>{tx=[...e.results].map(x=>x[0].transcript).join(' ');$('#heard').textContent=tx;post({type:'voice',text:tx,final:false})};
+ r.onerror=e=>{post({type:'voice',error:e.error});st('Erro no microfone: '+e.error)};
+ r.onend=()=>{$('#mic').classList.remove('on');post({type:'voice',text:tx,final:true})};
+ r.start();$('#mic').classList.add('on')}
+$('#mic').onclick=listen;
+addEventListener('message',e=>{
+ if(!OK.test(e.origin))return;app=e.source;appOrigin=e.origin;const m=e.data||{};
+ if(m.type==='sync'){items=m.items||[];save()}
+ if(m.type==='listen')listen();
+ if(m.type==='hello'){JSON.parse(localStorage.q||'[]').forEach(q=>post(q));localStorage.q='[]'}
+});
+if(app)try{app.postMessage({type:'ready'},'*')}catch(e){}
+</script></body></html>
